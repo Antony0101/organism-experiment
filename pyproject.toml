@@ -1,31 +1,26 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "organism-simulation-sandbox"
+name = "simworld"
 version = "0.1.0"
-description = "A deterministic 2D entity simulation sandbox"
+description = "A small, general-purpose 2D flat-world simulation engine (layers, entities, systems) built on NumPy"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "pygame-ce>=2.5,<3",
-    "pygame_gui>=0.6.14,<0.7",
-]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.22"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8,<10",
-]
+viewer = ["pygame>=2.0"]
+editor = ["dearpygui>=2.0"]
+test = ["pytest>=7"]
 
 [project.scripts]
-simulation-sandbox = "sim_sandbox.app:main"
-simulation-benchmark = "sim_sandbox.benchmark:main"
+simworld-editor = "simworld.editor.gui_dpg:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = ["simworld", "simworld.modules", "simworld.editor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-

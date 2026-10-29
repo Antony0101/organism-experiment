@@ -1,0 +1,17 @@
+# Development environment snapshot: Python 3.12.3, Linux x86_64.
+# Use the same Python/NumPy versions when comparing deterministic results.
+# Recreate from the repository root with a fresh .venv:
+#   python3 -m venv .venv
+#   .venv/bin/python -m pip install -r requirements-dev.txt
+# Pins cover installed packages (including pip); isolated build dependencies
+# remain governed by pyproject.toml. GUI/viewer extras are not installed here.
+Pygments==2.21.0
+iniconfig==2.3.1
+numpy==2.5.4
+packaging==26.3
+pip==24.0
+pluggy==1.7.0
+pytest==9.2.0
+
+# Install this checkout, including its test extra; do not fetch legacy git code.
+-e .[test]
