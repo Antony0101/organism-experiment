@@ -332,3 +332,200 @@ No broken requirements found.
 ```
 
 `git diff --check` passed without output. Reviewed the requirements file and plan/progress edits; the blueprint package metadata and package implementation are unchanged. Next action, when requested: Step 004 only.
+
+## Step 004 — Execute the first documentation example
+
+**Status:** complete. **Date:** 2026-10-29. **Next:** Step 005 — Establish isolated test fixtures.
+
+### Scope and files
+
+- Added `tests/__init__.py` and `tests/test_readme.py` following blueprint §9.4. The tests require at least one marked Python block and execute each block with a new namespace in its own pytest temporary directory. Tracebacks identify the README block number.
+- Kept the initial threshold at one; Phase 6 raises it to eight. The `clean_components` fixture is deliberately deferred to Step 005, so this step imports no unimplemented registry/World modules.
+- Updated the Step 004 checkbox, phase/index status and this log. No engine code or dependencies changed.
+- This turn began at clean git HEAD `02d5a92` (`starting point`); earlier changes, including legacy deletions, had already been committed. Preservation checks use this turn's baseline rather than treating historical deletions as current working-tree changes.
+
+### Commands and observed outcomes
+
+- Read the current plan/progress, README and blueprint §9.4; checked repository/ancestor guidance and git status. No applicable `AGENTS.md` was found. `.venv/bin/python -m pytest --version` reported `pytest 9.2.0`.
+- `.venv/bin/python -m pytest tests/test_readme.py -q`: both tests passed (`.. [100%]`; the combined quiet settings suppress the summary).
+- Used a temporary Python probe to append a marked block raising `RuntimeError("intentional Step 004 failure probe")` and run `.venv/bin/python -m pytest tests/test_readme.py -o addopts='' -q`. The subprocess exited 1 as expected: **1 failed, 2 passed in 0.03s**. Its traceback identified `README block 1:1`. A `finally` block restored the original README bytes and verified exact restoration.
+- Used a second temporary probe to append two marked blocks. Each asserted the same relative filename was absent, then wrote it; the second also asserted a variable from the first was absent. The same pytest command exited 0: **4 passed in 0.02s**. This demonstrates directory and namespace isolation. No probe file appeared in the repository, and README bytes were restored again.
+- `.venv/bin/python -m pytest tests -o addopts='' -q` after restoration: **2 passed in 0.01s**.
+
+### Limitations and decisions
+
+No deviations from Step 004. Temporary failure/isolation probes were removed and not saved as README examples. Component-registry cleanup will be introduced by Step 005; the current sole example only imports the skeleton. No fixtures, feature implementation or Phase 0 completion claim were added here.
+
+### Verification and diff review
+
+Final verification compares pre-edit hashes, limits changes to the two new test files and three plan/progress files, checks README restoration, confirms exactly Steps 001–004 are checked, and checks links/whitespace. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step004.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only two test files and three plan/progress files changed.
+PASS: README restored exactly; no probe artifacts, unrelated deletions or staged changes.
+PASS: exactly Steps 001-004 complete; fixture work remains deferred; links/whitespace valid.
+```
+
+`git diff --check` passed without output. Reviewed the new test files directly alongside the tracked plan diff; the untracked test files are not included in `git diff --stat`. Next action, when requested: Step 005 only.
+
+## Step 005 — Establish isolated test fixtures
+
+**Status:** complete. **Date:** 2026-10-29. **Next:** Step 006 — Document the incremental working agreement.
+
+### Scope and files
+
+- Added `tests/conftest.py` with a function-scoped `clean_components` fixture. It imports the registry only at fixture setup, snapshots registrations and restores them in `finally`, removing additions and restoring replaced/removed entries.
+- Until `simworld.registry` exists, cleanup is a no-op. Only that precise missing-module case is allowed: failures caused by missing dependencies within a registry are re-raised.
+- Connected every runnable README block to `clean_components` as specified by blueprint §9.4.
+- Added three focused cases in `tests/test_fixtures.py`: successful-test cleanup, failed-test cleanup, and propagation of an internal import failure. A temporary module/registry test double exercises the documented registry interface without implementing engine features.
+- Updated Step 005 completion/index and this log. Preserved the uncommitted Step 004 files/edits present at the start of this turn.
+
+### Deferred fixture
+
+The complete `world` fixture from blueprint §9.2 remains deferred to **Step 071 (Phase 4)**, which explicitly completes the fixture after World, all six built-ins and terrain APIs exist. `tests/conftest.py` records that dependency; it imports no World or built-in module at collection time. No fake world fixture is exposed in the meantime.
+
+### Commands and observed outcomes
+
+- Baseline `.venv/bin/python -m pytest tests -o addopts='' -q`: **2 passed in 0.01s**.
+- Added regression tests and README fixture use first. The same suite command failed as expected with **1 error in 0.10s**, reporting `ModuleNotFoundError: No module named 'tests.conftest'` before the fixture was implemented.
+- After implementation, `.venv/bin/python -m pytest tests -o addopts='' -q`: **5 passed in 0.03s**. Cleanup restores original object registrations after normal completion and an intentional test-body exception; unrelated import errors propagate.
+- `.venv/bin/python -m pytest tests --collect-only -o addopts='' -q`: **5 tests collected in 0.01s**, without requiring missing World or registry modules.
+
+### Limitations and decisions
+
+No deviations from Step 005. Real component/decorator integration awaits the actual registry; current restoration tests use a module test double, not a functioning engine registry. The README test also passes in the real scaffold where the registry is absent. No runtime code, dependencies or future fixtures were added.
+
+### Verification and diff review
+
+Final verification compares this turn's pre-edit content hashes, allows only the three fixture/README test files and three plan/progress files, and checks that exactly Steps 001–005 are complete. It also verifies collection/execution left the unimplemented engine absent and validates changed Markdown links/whitespace. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step005.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only three fixture/README test files and three plan/progress files changed from this turn baseline.
+PASS: existing unrelated files preserved; no staged changes, deletions or future engine modules added.
+PASS: exactly Steps 001-005 complete; 189 steps unchecked; links/whitespace valid.
+```
+
+`git diff --check` passed without output. Reviewed the fixture, focused tests, README fixture dependency and status-only plan changes. Next action, when requested: Step 006 only.
+
+## Step 006 — Document the incremental working agreement
+
+**Status:** complete. **Date:** 2026-10-29. **Next:** Step 007 — Verify the scaffold milestone.
+
+### Scope and working agreement
+
+Expanded root `README.md` with virtualenv creation, pinned development installation and editable test-extra commands; full/focused test and dependency-check commands; locally observed versions; package/import boundaries; current scaffold limitations; and the numbered one-step execution procedure. Updated completion status in `plans/00-scaffold.md` and `plans/README.md`, plus this log. Existing uncommitted test/plan changes were preserved.
+
+The contributor workflow is: read the next unchecked step and cited blueprint sections, inspect status, implement only that step with focused tests when appropriate, verify and review it, record actual evidence/deviations here, check completion only after acceptance, report the next step and stop. Full accumulated tests and each phase exit gate are required at phase boundaries. Preserve unrelated changes and keep optional roadmap features separate.
+
+### Commands and observed outcomes
+
+Ran the README's verification commands against the existing Step 003 environment:
+
+| Command | Observed result |
+| --- | --- |
+| `.venv/bin/python -m pytest tests` | **5 passed in 0.02s** |
+| `.venv/bin/python -m pip --no-cache-dir check` | **No broken requirements found.** |
+| `.venv/bin/python -m pytest tests/test_readme.py` | **2 passed in 0.02s** |
+
+A Python metadata query confirmed the README's recorded versions: Python **3.12.3**, NumPy **2.5.4**, pytest **9.2.0**, pip **24.0**. The README retains exactly one marked Python import example; setup/verification shell fences are documentation, not Python examples.
+
+### Current limitations and deferred work
+
+Phase 0's final milestone remains **Step 007**, not completed by this documentation task. The engine/public simulation API and editor front-end are unimplemented. Component cleanup permits the absent registry until it exists; the complete `world` fixture remains deferred to Step 071. GUI extras are not installed, and GUI/OpenGL/cross-platform behavior remains unverified.
+
+No fresh environment was created and no dependencies were reinstalled here. The documented pinned recreation path has not been exercised in a separate fresh environment. Commands and versions reflect the existing working environment; the README distinguishes those observations from future reproducibility claims.
+
+### Verification and diff review
+
+No deviations from Step 006. This documentation-only change needs direct checks rather than new tests. Final review checks that only root README and the three plan/progress documents changed, links resolve, only Steps 001–006 are checked and all earlier source/tests/dependencies remain byte-for-byte intact. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step006.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only README.md and three plan/progress documents changed; existing source/tests/dependencies preserved.
+PASS: exactly Steps 001-006 complete; Step 007 pending; one marked README Python example retained.
+PASS: documentation links resolve; no trailing whitespace, staged changes or deletions.
+```
+
+`git diff --check` passed without output. Reviewed the root README diff and plan/progress edits against the pre-edit snapshot. A contributor can now find the next step, verification commands and current limitations directly in the repository. Next action, when requested: Step 007 only.
+
+## Step 007 — Verify the scaffold milestone
+
+**Status:** complete. **Date:** 2026-10-29. **Phase 0 exit gate:** passed. **Next:** Step 008 — Build actionable engine errors (Phase 1).
+
+### Scope and files
+
+Reinstalled the local package in editable mode with its declared test extra, ran the complete current suite and dependency check, checked installed imports outside the checkout, and audited the scaffold against the blueprint. Updated only root `README.md`, `plans/README.md`, `plans/00-scaffold.md` and this progress log outside ignored installation artifacts. Existing uncommitted tests/documentation were preserved. Pip refreshed ignored `.venv/` installation files and generated `simworld.egg-info/` metadata.
+
+No feature code, dependency pins or test cases changed. This milestone verifies the scaffold; it does not implement Phase 1.
+
+### Commands and actual results
+
+1. `.venv/bin/python -m pip install --disable-pip-version-check --no-cache-dir -e '.[test]'` with package-index access: build-isolation setup and editable build succeeded. Existing dependency versions already satisfied requirements. Final installation output:
+
+   ```text
+   Successfully built simworld
+   Installing collected packages: simworld
+     Attempting uninstall: simworld
+       Found existing installation: simworld 0.1.0
+       Uninstalling simworld-0.1.0:
+         Successfully uninstalled simworld-0.1.0
+   Successfully installed simworld-0.1.0
+   ```
+
+2. `.venv/bin/python -m pytest tests -q`: five passing dots, no failures; the double quiet setting suppresses pytest's summary. After updating README status, ran `.venv/bin/python -m pytest tests -o addopts='' -q` to exercise the final documentation and capture the exact summary: **5 passed in 0.02s**.
+3. `.venv/bin/python -m pip --no-cache-dir check`: **No broken requirements found.**
+4. From `/tmp`, ran `/home/caspa/projects/personal/organism_experiment/.venv/bin/python -I -B -` to import all three declared packages, check their source paths, inspect installed `direct_url.json`, verify virtualenv isolation and confirm GUI packages are absent. Actual output:
+
+   ```text
+   PASS: all three editable packages import from /tmp in Python isolated mode.
+   PASS: local editable metadata confirmed; headless imports work without Dear PyGui/pygame.
+   Python: 3.12.3
+   numpy: 2.5.4
+   pytest: 9.2.0
+   pip: 24.0
+   ```
+
+5. A stdlib audit compared `pyproject.toml` verbatim with blueprint §2.1, matched every requirements pin to the installed version, checked the three package initializers, test package/fixtures and sole README example, and confirmed no other runtime Python modules exist:
+
+   ```text
+   PASS: blueprint packaging, exact dependency pins and Phase 0 file boundaries verified.
+   ```
+
+6. `.venv/bin/python --version` and `.venv/bin/python -m pip --no-cache-dir list --format=freeze`: Python **3.12.3**, NumPy **2.5.4**, pytest **9.2.0**, pip **24.0**, iniconfig **2.3.1**, packaging **26.3**, pluggy **1.7.0**, Pygments **2.21.0**, editable simworld **0.1.0**. Versions remain recorded in README and `requirements-dev.txt`.
+7. `command -v` checks: **Xvfb, xvfb-run, xdotool, ffmpeg and glxinfo not found**. No optional GUI checks ran.
+
+### Phase 0 acceptance
+
+| Requirement | Result |
+| --- | --- |
+| Blueprint packaging and three importable package skeletons | PASS |
+| Editable installation with test dependencies | PASS |
+| Full current suite, including runnable README example and cleanup cases | PASS — 5 passed |
+| Imports outside the checkout in isolated Python mode | PASS |
+| Dependency consistency and actual versions recorded | PASS |
+| No later-phase runtime implementation added | PASS |
+
+The complete §9.2 `world` fixture is deferred to Step 071, as already decided in the plan and Step 005; the scaffold's lazy component fixture is present. This is the documented scheduling adjustment from the blueprint's broad Phase 0 fixture wording, not an implemented World claim. The suite has five tests because it includes cleanup regression cases; reference counts are not acceptance targets.
+
+### Unverified work and limitations
+
+The install check reused the existing `.venv`; fresh-environment recreation from pinned requirements is **NOT RUN** here and remains documented as such. GUI/viewer extras and windows, OpenGL, other operating systems, simulation behavior and the future editor command are unverified or unimplemented. These are not requirements of this scaffold gate. No dependency or implementation failure remains from the checks that ran.
+
+### Verification and diff review
+
+The final scope check compares pre-edit hashes, preserves prior changes, allows only the four documentation/status files above, checks all seven Phase 0 boxes and confirms all 187 later steps remain unstarted. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step007.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only four documentation/status files changed; prior source/tests/pins and unrelated work preserved.
+PASS: all seven Phase 0 steps complete; all 187 later steps unchecked; no Phase 1 runtime code added.
+PASS: Markdown links/whitespace valid; no staged changes or deletions.
+```
+
+`git diff --check` passed without output. Reviewed the documentation/status changes and the pre-edit hash comparison. Phase 0 is complete within its planned scope. Next action, when requested: Step 008 only.

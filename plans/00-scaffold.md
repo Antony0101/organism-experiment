@@ -6,7 +6,7 @@ Steps **001–007** (7 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§2, 4
 
 **Phase exit gate:** Editable installation and the initial README test pass; actual environment versions are recorded.
 
-Steps 001–003 are complete; Steps 004–007 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 001–007 are complete and this phase's exit gate has passed. Step 008 in Phase 1 is next. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 001 — Record the rebuild baseline
 
@@ -28,25 +28,25 @@ Steps 001–003 are complete; Steps 004–007 are unstarted. Check a box only af
 
 ### Step 004 — Execute the first documentation example
 
-- [ ] **Change:** Add tests/__init__.py and test_readme.py to discover and execute marked Python blocks independently in temporary directories; require one block initially.
+- [x] **Change:** Add tests/__init__.py and test_readme.py to discover and execute marked Python blocks independently in temporary directories; require one block initially.
 - **Verify:** The import example passes; a temporary deliberately broken block fails and is reverted before completion.
 - **Blueprint:** §9.4.
 
 ### Step 005 — Establish isolated test fixtures
 
-- [ ] **Change:** Add clean_components with a lazy registry import so the scaffold remains runnable; defer the complete world fixture until built-ins exist.
+- [x] **Change:** Add clean_components with a lazy registry import so the scaffold remains runnable; defer the complete world fixture until built-ins exist.
 - **Verify:** Scaffold tests collect without importing missing World/registry implementations; the deferred fixture is explicitly tracked.
 - **Blueprint:** §§9.2, 12.2 Phase 0.
 
 ### Step 006 — Document the incremental working agreement
 
-- [ ] **Change:** Record install/test commands, package boundaries and the one-step execution procedure in README.md and plans/progress.md.
+- [x] **Change:** Record install/test commands, package boundaries and the one-step execution procedure in README.md and plans/progress.md.
 - **Verify:** A new contributor can find the next step, verification command and current limitations without reading chat history.
 - **Blueprint:** §§2.3, 8, 12.1.
 
 ### Step 007 — Verify the scaffold milestone
 
-- [ ] **Change:** Run editable installation, the initial pytest suite and an import from outside the repository; record exact output and changed files.
+- [x] **Change:** Run editable installation, the initial pytest suite and an import from outside the repository; record exact output and changed files.
 - **Verify:** Installation and tests pass; versions and any missing optional tools are documented; no later-phase implementation was added.
 - **Blueprint:** §8 Phase 0.
 
