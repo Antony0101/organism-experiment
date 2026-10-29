@@ -2,11 +2,11 @@
 
 This plan turns [BLUEPRINT.md](../BLUEPRINT.md) into **194 sequential steps across 11 phases**. Each step is a small coding session with a concrete change, a verification target and source sections. The intended rhythm is read, test, implement, inspect, record, then stop at the step boundary.
 
-**Current status: Steps 001–007 complete (7/194); Phase 0's gate passed. Step 008 is next.** Editable installation, current tests and outside-checkout imports are verified. Exact installed versions are in [requirements-dev.txt](../requirements-dev.txt). See [plans/progress.md](progress.md) for evidence and limitations.
+**Current status: Steps 001–011 complete (11/194); Phase 0's gate passed. Step 012 is next.** Engine errors, registries, component metadata/registration and component serialization are implemented; Phase 1 remains in progress. Exact installed versions are in [requirements-dev.txt](../requirements-dev.txt). See [plans/progress.md](progress.md) for evidence and limitations.
 
 ## Start here
 
-Read this file, the [progress log](progress.md), then open [Phase 1](01-ecs.md) and continue with Step 008 when requested. Use the global step number when asking for work, for example: “Implement Step 009 only.” Every step depends on its predecessor, and every phase depends on the preceding phase's exit gate. This deliberately favors a single reviewable sequence over parallel work.
+Read this file, the [progress log](progress.md), then open [Phase 1](01-ecs.md) and continue with Step 012 when requested. Use the global step number when asking for work, for example: “Implement Step 012 only.” Every step depends on its predecessor, and every phase depends on the preceding phase's exit gate. This deliberately favors a single reviewable sequence over parallel work.
 
 | Blueprint phase | Plan | Steps | Count |
 | --- | --- | --- | ---: |

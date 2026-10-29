@@ -529,3 +529,139 @@ PASS: Markdown links/whitespace valid; no staged changes or deletions.
 ```
 
 `git diff --check` passed without output. Reviewed the documentation/status changes and the pre-edit hash comparison. Phase 0 is complete within its planned scope. Next action, when requested: Step 008 only.
+
+## Step 008 — Build actionable engine errors
+
+**Status:** complete. **Date:** 2026-10-29. **Next:** Step 009 — Implement the generic name registry. **Phase 1:** in progress.
+
+### Scope and files
+
+- Added `simworld/errors.py` with all 20 documented exception classes, stdlib-only imports, module `__all__` and the specified built-in exception ancestry. Unknown-name subclasses supply their kind; callers can override the kind and append a hint.
+- `UnknownNameError` consumes known names once, converts them to strings for comparison, uses `difflib.get_close_matches(..., n=3)`, lists available names and handles an empty registry explicitly. Plain error subclasses preserve caller-supplied messages for later engine operations.
+- Updated `simworld/__init__.py` to explicitly re-export errors, as required by §5.1. The initially empty scaffold API now exposes only the implemented errors; no future runtime API is exported.
+- Added focused cases in `tests/test_ecs.py` for inheritance, all unknown-name kinds, suggestions, known values, override/hint, empty and non-string/generator inputs, unrelated names, supplied diagnostics and exports.
+- Updated root README and the Phase 1/index status, plus this log. The turn began with a clean working tree; no existing uncommitted work needed alteration.
+
+### Commands and observed outcomes
+
+- Read Step 008 and blueprint §5.1, checked repository status and applicable guidance, and saved pre-edit file hashes. No applicable `AGENTS.md` was found.
+- Added tests first. `.venv/bin/python -m pytest tests/test_ecs.py -o addopts='' -q` failed as expected before implementation: **1 error in 0.12s**, reporting `ImportError: cannot import name 'errors' from 'simworld'`.
+- After implementing the error module and public exports, `.venv/bin/python -m pytest tests -o addopts='' -q`: **40 passed in 0.08s** (35 error cases and the five existing scaffold cases).
+
+### Limitations and decisions
+
+No deviations from Step 008. Stale/missing/duplicate exceptions currently carry diagnostics supplied by their caller; actual allocator/World diagnostics belong to later steps. Registries, components and World do not exist yet. No dependency changes, ECS behavior or later-step features were added.
+
+### Verification and diff review
+
+Final review compares pre-edit hashes, allows only the error module, root exports, ECS error tests and four documentation/status files, confirms exactly Steps 001–008 are complete, and checks that registry/World remain absent. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step008.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only error implementation/exports/tests and four documentation/status files changed.
+PASS: Steps 001-008 complete; all 186 later steps unchecked; registry/World absent.
+PASS: unrelated files preserved; links/whitespace valid; no staged changes or deletions.
+```
+
+`git diff --check` passed without output. Reviewed exception definitions, lookup message construction, public exports, focused tests and the status-only documentation changes. Next action, when requested: Step 009 only.
+
+## Step 009 — Implement the generic name registry
+
+**Status:** complete. **Date:** 2026-10-29. **Next:** Step 010 — Describe and register data components. **Phase 1:** in progress.
+
+### Scope and files
+
+- Added `simworld/registry.py` with generic `Registry`, instance-local ordered storage, duplicate-name errors, explicit replacement, optional removal, configured unknown-name errors, containment/iteration/length, snapshot `names()` and live `items()` views. Registration returns the supplied object; replacement preserves its key position.
+- Added the empty, process-global `COMPONENTS` registry with `UnknownComponentError`. This small integration is necessary now: creating the registry module makes the existing lazy `clean_components` fixture import it. No component metadata, decorators or component classes were implemented early; its value annotation remains `Any` until metadata exists.
+- Added 13 focused cases in `tests/test_registry.py`, including duplicate failure atomicity, replacement/removal order, false-valued entries, independent registries, configured errors and real `COMPONENTS` cleanup after success/failure. Existing fixture tests remain intact.
+- Updated the root README, Phase 1/index status and this log. Preserved all pre-existing Step 008 changes; root exports and the error implementation remain unchanged.
+
+### Commands and observed outcomes
+
+- Read Step 009, blueprint §5.2 and existing fixtures/errors, checked status/guidance, and saved pre-edit hashes. No applicable `AGENTS.md` was found.
+- Added the tests first. `.venv/bin/python -m pytest tests/test_registry.py -o addopts='' -q` failed as expected: **1 error in 0.13s**, with `ModuleNotFoundError: No module named 'simworld.registry'`.
+- After implementation, `.venv/bin/python -m pytest tests -o addopts='' -q`: **53 passed in 0.09s**. This includes all 40 prior cases plus 13 new registry cases and verifies the existing README fixture works against the real registry.
+
+### Limitations and decisions
+
+No generic-registry contract deviations. The empty `COMPONENTS` container is introduced one step before its metadata/decorators so this completed step keeps the existing suite working. The cleanup fixture itself did not need modification. `Registry` is available from `simworld.registry`; package-root API completion remains incremental. Components, serialization, active-world context and World are still unimplemented.
+
+### Verification and diff review
+
+Final review compares this turn's pre-edit hashes, permits only the registry module/tests plus four documentation/status files, verifies exactly Steps 001–009 are checked and confirms no component/World feature implementation was introduced. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step009.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only registry implementation/tests and four documentation/status files changed from this turn baseline.
+PASS: Steps 001-009 complete; 185 steps unchecked; component metadata/World remain unimplemented.
+PASS: prior work preserved; links/whitespace valid; no staged changes or deletions.
+```
+
+`git diff --check` passed without output. Reviewed the registry's ordered mapping behavior, error paths, shared empty container and tests alongside documentation/status updates. Next action, when requested: Step 010 only.
+
+## Step 010 — Describe and register data components
+
+**Status:** complete. **Date:** 2026-10-29. **Next:** Step 011 — Serialize one component at a time. **Phase 1:** in progress.
+
+### Scope and files
+
+- Added `FieldInfo` and `ComponentInfo` dataclasses to `simworld/registry.py`, and typed the existing global registry as `Registry[ComponentInfo]`.
+- Added `prop` as a dataclass-field helper retaining min/max/tooltip/serialize and arbitrary widget metadata, defaults/factories and constructor participation.
+- Added bare/called `@component` forms with optional name/category, slots for plain classes, reflection of fields/defaults/docstrings, and same-module/qualified-name replacement. Other classes colliding on a name raise `DuplicateNameError` with explicit-name advice. Existing dataclasses retain their identity/configuration.
+- Re-exported `component`, `prop` and the existing `COMPONENTS` object from `simworld/__init__.py`; metadata classes remain available from the registry module.
+- Added 13 focused cases in `tests/test_components.py`, all using `clean_components`. Verified cleanup of actual registered/reloaded metadata after normal completion and an exception; the fixture already activated in Step 009 required no code changes.
+- Updated root README, Phase 1/index status and this log. Existing staged changes are preserved without staging, unstaging or committing anything.
+
+### Commands and observed outcomes
+
+- Read Step 010, blueprint §5.2 and existing registry/fixtures; inspected repository/ancestor guidance and saved pre-edit content hashes plus the staged binary diff. No applicable `AGENTS.md` was found.
+- Added tests first. `.venv/bin/python -m pytest tests/test_components.py -o addopts='' -q` failed as expected before implementation: **1 error in 0.14s**, reporting `ImportError: cannot import name 'ComponentInfo' from 'simworld.registry'`.
+- After implementation, `.venv/bin/python -m pytest tests -o addopts='' -q`: **66 passed in 0.12s**, covering all 53 prior cases and 13 new component cases.
+
+### Decisions and limitations
+
+Factory defaults are evaluated once for the reflected metadata default; dataclass instances still receive independently created values. Fields without a declared default are represented as `None` in metadata while remaining required constructor arguments. Field metadata keeps all supplied keys, including arbitrary editor hints. These choices fill in details left implicit by §5.2; they do not enforce numeric types/ranges on component instances.
+
+Serialization, `component_name`, active-world context, engine Position/Appearance/Parent classes and World remain for their owning steps. No dependencies or unrelated fixture behavior changed. Component metadata reload replaces registration; live-entity migration is a later plugin concern.
+
+### Verification and diff review
+
+Final review compares pre-edit content hashes and staged diff, limits changes to registry/root exports, component tests and four documentation/status files, and checks exactly Steps 001–010 are complete. Results follow after execution.
+
+Ran `.venv/bin/python -B /tmp/verify_simworld_step010.py` (temporary stdlib-only scope verifier):
+
+```text
+PASS: only component metadata/registration, root exports, tests and four documentation/status files changed.
+PASS: existing staged diff unchanged; prior source/tests/pins preserved.
+PASS: Steps 001-010 complete; 184 steps unchecked; no serialization, context or World implemented.
+PASS: Markdown links and whitespace valid.
+```
+
+`git diff --check` passed without output. Reviewed field reflection/default behavior, decorator identity rules, public exports and cleanup regression cases. Next action, when requested: Step 011 only.
+
+## Step 011 — Serialize one component at a time
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 012 — Add the three core data components. **Phase 1:** in progress.
+
+### Scope and files
+
+- Added `component_name`, `component_to_dict` and `component_from_dict` to `simworld/registry.py` and its module exports. Names supplied as strings use the specialized unknown-component error; classes and instances must carry a currently registered component name.
+- Component conversion calls `_check_serializable()` when present, omits fields marked `serialize=False`, converts NumPy scalars to Python scalars, sequences to lists, mapping keys to strings, and nested dataclass instances to dictionaries. Unsupported values raise `SerializationError`.
+- Restoration accepts omitted data, rejects unknown field names, converts lists back to tuples where the reflected default is a tuple, and wraps constructor `TypeError` as `SerializationError`. Dataclass defaults continue to apply to missing fields.
+- Added six focused tests in `tests/test_components.py` for names, nested JSON conversion, omitted fields, serialization guards, unsupported values, tuple/default restoration, bad fields and constructor errors. Updated README and plan status. No package-root exports were added because §5.20 does not include these helpers in its stable root API.
+
+### Commands and observed outcomes
+
+- Read Step 011 and blueprint §5.2; inspected registry, error classes, existing component tests, plan status and staged state.
+- Added tests first. `.venv/bin/python -m pytest tests/test_components.py -o addopts='' -q` failed at collection as expected because `component_from_dict` was not yet present.
+- After implementation, `.venv/bin/python -m pytest tests -o addopts='' -q`: **72 passed in 0.25s**.
+
+### Decisions and limitations
+
+Mapping keys are converted with `str(key)` as specified. JSON conversion accepts Python scalar types, NumPy scalars, sequences, dictionaries and nested dataclass instances; NumPy arrays and other arbitrary objects raise `SerializationError`. Component class input is supported by `component_name`, while serialization requires an instance. Only `TypeError` from component construction is translated, matching §5.2.
+
+### Verification and diff review
+
+Check that only `simworld/registry.py`, `tests/test_components.py` and the README/plan status files changed in this step, that the pre-existing staged diff remains byte-for-byte unchanged, that exactly Steps 001–011 are checked, and that `git diff --check` passes. Review the final diff and record the actual results below.

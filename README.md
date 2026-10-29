@@ -5,10 +5,13 @@ from [BLUEPRINT.md](BLUEPRINT.md).
 
 ## Current status
 
-Steps 001–007 are complete and **Phase 0's scaffold gate has passed**: editable
-installation, current tests and imports outside the checkout were verified.
-The package skeleton, development environment and test fixtures are available.
-**Step 008 — Build actionable engine errors** in [Phase 1](plans/01-ecs.md) is next.
+Steps 001–011 are complete and **Phase 0's scaffold gate has passed**: editable
+installation, scaffold tests and imports outside the checkout were verified.
+The engine error hierarchy, `component`, `prop` and `COMPONENTS` are available
+through `simworld`; registry, component metadata and serialization helpers live
+in `simworld.registry`. Phase 1 is in progress.
+**Step 012 — Add the three core data components** in
+[Phase 1](plans/01-ecs.md) is next.
 
 Simulation APIs, built-in modules and the editor window arrive in later steps.
 The declared `simworld-editor` entry point targets a future module and cannot
@@ -73,8 +76,9 @@ For only the executable documentation checks:
 
 README Python blocks marked with `<!-- run -->` run independently in temporary
 directories with fresh namespaces. `clean_components` restores global component
-registrations once the registry exists; it currently allows the scaffold's absent
-registry. The complete `world` fixture is deferred to Step 071, after built-ins.
+registrations in the shared `COMPONENTS` registry, including decorated component
+classes replaced by reloads. The complete `world` fixture is deferred to Step 071,
+after built-ins.
 
 ## Package boundaries
 
@@ -108,5 +112,5 @@ behavior remain unverified; no cross-platform support claim has been established
    sequence. Keep roadmap suggestions separate from the specified rebuild.
 
 No commit, push or publication is required by this workflow. Work not exercised
-must remain listed as unverified. Step 008 starts engine implementation when
-requested; no Phase 1 code has been implemented yet.
+must remain listed as unverified. Steps 010–011 add component metadata and
+serialization; entity and simulation runtime features remain planned.

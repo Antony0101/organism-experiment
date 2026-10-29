@@ -6,29 +6,29 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 **Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
 
-All steps are planned and unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 008–011 are complete; Steps 012–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
-- [ ] **Change:** Add errors.py with the documented inheritance tree and unknown-name suggestions; cover representative error text in test_ecs.py.
+- [x] **Change:** Add errors.py with the documented inheritance tree and unknown-name suggestions; cover representative error text in test_ecs.py.
 - **Verify:** Unknown names list known values and close matches; stale, duplicate and missing-component errors retain their built-in exception ancestry.
 - **Blueprint:** §5.1.
 
 ### Step 009 — Implement the generic name registry
 
-- [ ] **Change:** Add Registry registration, replacement, removal, lookup and ordered names/items access in registry.py.
+- [x] **Change:** Add Registry registration, replacement, removal, lookup and ordered names/items access in registry.py.
 - **Verify:** Duplicate rejection, explicit replacement and specialized unknown-name errors pass focused tests.
 - **Blueprint:** §5.2.
 
 ### Step 010 — Describe and register data components
 
-- [ ] **Change:** Implement prop, FieldInfo, ComponentInfo and @component, including slotted dataclasses and module/qualname duplicate rules; activate clean_components.
+- [x] **Change:** Implement prop, FieldInfo, ComponentInfo and @component, including slotted dataclasses and module/qualname duplicate rules; activate clean_components.
 - **Verify:** Metadata/default factories survive; reload of the same logical class succeeds; a different class using its name fails without leaking registry state.
 - **Blueprint:** §§5.2, 9.2.
 
 ### Step 011 — Serialize one component at a time
 
-- [ ] **Change:** Add component_name, component_to_dict and component_from_dict with registered-name validation and JSON conversion.
+- [x] **Change:** Add component_name, component_to_dict and component_from_dict with registered-name validation and JSON conversion.
 - **Verify:** Tuple defaults, NumPy scalars, omitted nonserialized fields, unknown fields and unsupported objects match the specified success/error behavior.
 - **Blueprint:** §5.2.
 
