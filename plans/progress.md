@@ -665,3 +665,67 @@ Mapping keys are converted with `str(key)` as specified. JSON conversion accepts
 ### Verification and diff review
 
 Check that only `simworld/registry.py`, `tests/test_components.py` and the README/plan status files changed in this step, that the pre-existing staged diff remains byte-for-byte unchanged, that exactly Steps 001–011 are checked, and that `git diff --check` passes. Review the final diff and record the actual results below.
+
+## Step 012 — Add the three core data components
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 013 — Allocate generation-safe entity ids. **Phase 1:** in progress.
+
+### Scope and files
+
+- Added `simworld/components.py` with registered core `Position`, `Appearance` and `Parent` dataclasses. Position keeps its annotated numeric values without runtime coercion. Appearance includes the color widget, white RGB default and minimum size; Parent includes the entity picker metadata and zero sentinel.
+- Exported `Position` and `Appearance` from the package root as required by §5.20. `Parent` remains available from `simworld.components`, matching the blueprint's explicit root-export exception.
+- Added three focused checks in `tests/test_core_components.py` for registry metadata, integer and NumPy numeric preservation, and public exports. Updated README and plan status.
+
+### Commands and observed outcomes
+
+- Read Step 012, blueprint §5.4 and §5.20, current package exports, registry behavior and repository status. No applicable `AGENTS.md` was found.
+- Added tests first. `.venv/bin/python -m pytest tests/test_core_components.py -o addopts='' -q` failed at collection as expected because `simworld.components` did not exist.
+- After implementation, the same focused command passed: **3 passed in 0.16s**. `.venv/bin/python -m pytest tests -o addopts='' -q`: **75 passed in 0.36s**.
+
+### Decisions and limitations
+
+Metadata tooltips use concise descriptions because §5.4 specifies their presence but leaves exact text as ellipses. The component values remain plain dataclass data; validation and editor behavior are left to later systems.
+
+### Verification and diff review
+
+Confirm scope is limited to the core component module, required package exports, focused tests and README/plan status; preserve the staged diff; verify exactly Steps 001–012 are checked; run `git diff --check`; review the final diff.
+
+## Step 013 — Allocate generation-safe entity ids
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 014 — Make allocation reversible and serializable. **Phase 1:** in progress.
+
+- Added `simworld/ecs.py` with the integer Entity alias, 32-bit index helpers and EntityAllocator. New slots begin at generation 1; releasing a live id increments its generation and pushes its slot onto the free stack. Allocation reuses the most recently released slot. Allocators have independent state.
+- Added safe liveness checks, live counts and diagnostics distinguishing invalid values, never-allocated slots/generations and despawned ids. Failed releases leave allocator state unchanged. Booleans are rejected as ids; negative and zero values are invalid. Decode helpers follow the blueprint's bit operations without adding validation.
+- Exported `entity_index` and `entity_generation` from the package root per §5.20. Added 15 cases to `tests/test_ecs.py` covering id layout, LIFO reuse, stale generations, malformed inputs, repeated release, atomic failure and exports.
+- Before edits, saved content hashes and staged diff to `/tmp/simworld-step013-baseline.json`; inspected blueprint §5.3, plans and guidance. No applicable `AGENTS.md` was found.
+- Tests first: `.venv/bin/python -m pytest tests/test_ecs.py -o addopts='' -q` failed at collection with the expected missing `simworld.ecs` module. After implementation: **50 passed in 0.18s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **90 passed in 0.24s**.
+- Updated README and plan status. Reversal, allocator serialization and command buffers remain for later steps; World is not introduced here. No contract deviations beyond explicitly rejecting bool values as ids.
+- Final review: a stdlib snapshot comparison confirmed only the seven intended implementation/test/export/documentation files changed from this turn's baseline; existing Step 012 work and the staged diff were preserved. Verified exactly 13 checked steps and 181 pending. `git diff --check` passed without output; reviewed allocator code, error paths and focused tests.
+
+## Step 014 — Make allocation reversible and serializable
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 015 — Introduce minimal World state. **Phase 1:** in progress.
+
+- Added `revive` and `rollback_alloc` to `simworld/ecs.py`. Revive checks the released generation and free-stack top before restoring the original id. Allocation rollback removes a fresh final slot or returns a recycled slot to the free stack without advancing its generation.
+- Added `to_dict` and classmethod `from_dict`, preserving generations, liveness and free-slot order in the specified three-list format. Both copy lists so returned data, input data and allocator state remain independent.
+- Added seven tests in `tests/test_ecs.py`: exact fresh/recycled allocation undo, reverse-order release revival, the editor's release/revive/rollback sequence, invalid undo atomicity, JSON roundtrip with stale ids and next-allocation equivalence, and list ownership.
+- Read Step 014 and blueprint §5.3; inspected repository guidance and saved this turn's content/staged baseline in `/tmp/simworld-step014-baseline.json`. No applicable `AGENTS.md` was found.
+- Tests first: `.venv/bin/python -m pytest tests/test_ecs.py -o addopts='' -q` produced **7 failed, 50 passed in 0.40s**, all new cases failing because serialization methods were missing. After implementation the same command produced **57 passed in 0.24s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **97 passed in 0.25s**.
+- LIFO remains a caller precondition, as in §5.3: state checks catch invalid revival and rollback of a non-final fresh slot, but there is no added operation-history stack to detect every possible out-of-order recycled rollback. The later editor command stack owns ordering. Restoration expects valid allocator data; broader save-format validation belongs to later persistence work. No World or command buffer was introduced.
+- Updated README and plan status; final scope and staged-state review recorded below.
+- Final review passed: baseline hashes limit this step to allocator implementation/tests plus four documentation files; prior work and staged state are preserved. Exactly 14 steps are checked and 180 pending. `git diff --check` passed without output. Reviewed validation-before-mutation paths, list copies and undo preconditions.
+
+## Step 015 — Introduce minimal World state
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 016 — Implement entity creation and deletion. **Phase 1:** in progress.
+
+- Added `simworld/world.py` with WorldSettings defaults from §5.7, a minimal World constructor, one seeded NumPy Generator per world, resource-backed clock/RNG properties, an independent EntityAllocator and insertion-ordered component-store dictionaries. `resources["settings"]` references the world's settings object. Exported World and WorldSettings from the package root.
+- Unknown additional settings raise TypeError naming the invalid keys and valid options. Settings extra dictionaries have independent defaults; supplied extra mappings are shallow-copied. Time starts at 0.0, tick at 0 and dt at the configured value; resource dt can change independently of the configured default.
+- Added seven checks in `tests/test_world.py` for defaults, overrides, diagnostics, seeded sequences, independent mutable state, clock properties and exports. Read Step 015/§5.7 and inspected guidance/status; saved pre-edit hashes and staged state in `/tmp/simworld-step015-baseline.json`. No applicable AGENTS.md was found.
+- Tests first: `.venv/bin/python -m pytest tests/test_world.py -o addopts='' -q` failed at collection with the expected missing `simworld.world` module. After implementation: **7 passed in 0.15s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **104 passed in 0.27s**.
+- Integration boundary: the documented constructor signature includes modules, but nonempty module requests explicitly raise NotImplementedError until module installation is built in Phase 4. They are never silently ignored. Layers, terrain, scheduler, commands, actions, events and spatial services are not initialized yet; they will be connected in their owning steps. Component/entity lifecycle methods remain for Step 016 onward. These temporary omissions follow Step 015's restriction against importing future subsystems.
+- Updated README and plan status. Final scope and preservation checks follow below.
+- Final review passed: baseline hashes limit changes to World implementation/exports/tests and four status documents; all prior work and staged state are preserved. Exactly 15 steps are checked and 179 pending. `git diff --check` passed without output. Reviewed constructor validation, settings/resource ownership and the absence of future-service imports.

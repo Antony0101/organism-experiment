@@ -6,7 +6,7 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 **Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
 
-Steps 008–011 are complete; Steps 012–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 008–015 are complete; Steps 016–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
@@ -34,25 +34,25 @@ Steps 008–011 are complete; Steps 012–026 are unstarted. Check a box only af
 
 ### Step 012 — Add the three core data components
 
-- [ ] **Change:** Define Position, Appearance and Parent in components.py with their documented metadata.
+- [x] **Change:** Define Position, Appearance and Parent in components.py with their documented metadata.
 - **Verify:** Registry inspection exposes color/entity widgets and defaults; Position accepts numeric inputs without forcing a single Python numeric type.
 - **Blueprint:** §5.4.
 
 ### Step 013 — Allocate generation-safe entity ids
 
-- [ ] **Change:** Implement EntityAllocator allocation, release, liveness checks and precise stale-id diagnostics.
+- [x] **Change:** Implement EntityAllocator allocation, release, liveness checks and precise stale-id diagnostics.
 - **Verify:** Id zero is invalid; generations start at one; LIFO slot reuse bumps generation; invalid inputs are rejected safely.
 - **Blueprint:** §5.3.
 
 ### Step 014 — Make allocation reversible and serializable
 
-- [ ] **Change:** Add revive, rollback_alloc and allocator to_dict/from_dict; keep undo strictly LIFO.
+- [x] **Change:** Add revive, rollback_alloc and allocator to_dict/from_dict; keep undo strictly LIFO.
 - **Verify:** Fresh and recycled allocations undo exactly; allocator roundtrips preserve generations, free-list order and stale ids.
 - **Blueprint:** §5.3.
 
 ### Step 015 — Introduce minimal World state
 
-- [ ] **Change:** Add WorldSettings, seeded rng, clock/resources, allocator and ordered component stores in world.py, without importing future subsystems.
+- [x] **Change:** Add WorldSettings, seeded rng, clock/resources, allocator and ordered component stores in world.py, without importing future subsystems.
 - **Verify:** Defaults match §5.7; unknown settings fail clearly; same-seed generators produce the same sequence and mutable defaults are independent.
 - **Blueprint:** §5.7.
 

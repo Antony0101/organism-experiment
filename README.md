@@ -5,15 +5,19 @@ from [BLUEPRINT.md](BLUEPRINT.md).
 
 ## Current status
 
-Steps 001–011 are complete and **Phase 0's scaffold gate has passed**: editable
+Steps 001–015 are complete and **Phase 0's scaffold gate has passed**: editable
 installation, scaffold tests and imports outside the checkout were verified.
-The engine error hierarchy, `component`, `prop` and `COMPONENTS` are available
-through `simworld`; registry, component metadata and serialization helpers live
-in `simworld.registry`. Phase 1 is in progress.
-**Step 012 — Add the three core data components** in
+The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
+`Appearance` are available through `simworld`; `Parent` and registry metadata
+live in their respective modules. Entity allocation and stale-id checks live in
+`simworld.ecs`, along with LIFO undo and allocator serialization. ID decoding
+helpers are exported through `simworld`. `World` and `WorldSettings` provide
+configuration, seeded randomness, resources and initial entity storage.
+Phase 1 is in progress.
+**Step 016 — Implement entity creation and deletion** in
 [Phase 1](plans/01-ecs.md) is next.
 
-Simulation APIs, built-in modules and the editor window arrive in later steps.
+Entity lifecycle APIs, built-in modules and the editor window arrive in later steps.
 The declared `simworld-editor` entry point targets a future module and cannot
 launch yet. The current import example is:
 
@@ -112,5 +116,7 @@ behavior remain unverified; no cross-platform support claim has been established
    sequence. Keep roadmap suggestions separate from the specified rebuild.
 
 No commit, push or publication is required by this workflow. Work not exercised
-must remain listed as unverified. Steps 010–011 add component metadata and
-serialization; entity and simulation runtime features remain planned.
+must remain listed as unverified. Steps 010–012 add component metadata,
+serialization and the core component types. Step 013 adds entity allocation;
+Step 015 adds minimal World state; entity lifecycle and simulation execution
+remain planned.
