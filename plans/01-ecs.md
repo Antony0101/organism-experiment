@@ -6,7 +6,7 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 **Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
 
-Steps 008–015 are complete; Steps 016–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 008–021 are complete; Steps 022–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
@@ -58,37 +58,37 @@ Steps 008–015 are complete; Steps 016–026 are unstarted. Check a box only af
 
 ### Step 016 — Implement entity creation and deletion
 
-- [ ] **Change:** Add spawn/despawn and component-store cleanup; validate duplicate components and names before allocating.
+- [x] **Change:** Add spawn/despawn and component-store cleanup; validate duplicate components and names before allocating.
 - **Verify:** Failed spawn consumes no id; deletion cleans every store and name map; stale deletion raises.
 - **Blueprint:** §5.7.
 
 ### Step 017 — Implement component access and mutation
 
-- [ ] **Change:** Add add/remove/get/try_get/has/components_of through registered component names or classes.
+- [x] **Change:** Add add/remove/get/try_get/has/components_of through registered component names or classes.
 - **Verify:** Missing versus stale errors are distinct; try_get returns None and has returns False for dead entities.
 - **Blueprint:** §5.7.
 
 ### Step 018 — Implement deterministic queries and counts
 
-- [ ] **Change:** Add smallest-store query snapshots, exclusions, entity listing and count.
+- [x] **Change:** Add smallest-store query snapshots, exclusions, entity listing and count.
 - **Verify:** Tuple argument order is preserved; smallest-store insertion order drives iteration; removing entities during iteration is safe; query without components fails.
 - **Blueprint:** §5.7.
 
 ### Step 019 — Implement entity naming
 
-- [ ] **Change:** Add set_name/entity/name_of with both name maps and uniqueness checks.
+- [x] **Change:** Add set_name/entity/name_of with both name maps and uniqueness checks.
 - **Verify:** Rename, removal, duplicate-name failure and lookup keep both maps consistent and leave failed edits unchanged.
 - **Blueprint:** §5.7.
 
 ### Step 020 — Implement prefab templates and overrides
 
-- [ ] **Change:** Add define_prefab/spawn_prefab with deep copies, nested/dotted overrides, component replacements and None removal.
+- [x] **Change:** Add define_prefab/spawn_prefab with deep copies, nested/dotted overrides, component replacements and None removal.
 - **Verify:** Invalid definitions fail immediately; sibling spawns share no mutable values; missing prefabs give helpful errors.
 - **Blueprint:** §5.7.
 
 ### Step 021 — Define systems and registration context
 
-- [ ] **Change:** Add loading_into/active_world, SystemDef and @system metadata with a World registration surface for systems.
+- [x] **Change:** Add loading_into/active_world, SystemDef and @system metadata with a World registration surface for systems.
 - **Verify:** Decorators register into an active world only; nested contexts unwind on errors; outside a context explicit registration is required.
 - **Blueprint:** §§5.2, 5.8.
 

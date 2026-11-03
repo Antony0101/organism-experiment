@@ -5,19 +5,27 @@ from [BLUEPRINT.md](BLUEPRINT.md).
 
 ## Current status
 
-Steps 001–015 are complete and **Phase 0's scaffold gate has passed**: editable
+Steps 001–021 are complete and **Phase 0's scaffold gate has passed**: editable
 installation, scaffold tests and imports outside the checkout were verified.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
 `Appearance` are available through `simworld`; `Parent` and registry metadata
 live in their respective modules. Entity allocation and stale-id checks live in
 `simworld.ecs`, along with LIFO undo and allocator serialization. ID decoding
 helpers are exported through `simworld`. `World` and `WorldSettings` provide
-configuration, seeded randomness, resources and initial entity storage.
+configuration, seeded randomness, resources and entity storage. World supports
+`spawn`, `despawn` and `is_alive`, with optional unique names at creation.
+Component access and mutation use `add`, `remove`, `get`, `try_get`, `has` and
+`components_of`. `query` iterates matching entities, `count` counts matches and
+`entities` lists all live ids, including entities without components. `set_name`,
+`entity` and `name_of` manage and look up unique entity names. `define_prefab`
+and `spawn_prefab` provide validated templates with independent component data.
+`@system` describes functions for explicit registration with `World.register`
+or automatic registration inside `simworld.registry.loading_into(world)`.
 Phase 1 is in progress.
-**Step 016 — Implement entity creation and deletion** in
+**Step 022 — Schedule systems in stable stages** in
 [Phase 1](plans/01-ecs.md) is next.
 
-Entity lifecycle APIs, built-in modules and the editor window arrive in later steps.
+System scheduling, built-in modules and the editor window arrive in later steps.
 The declared `simworld-editor` entry point targets a future module and cannot
 launch yet. The current import example is:
 
@@ -118,5 +126,7 @@ behavior remain unverified; no cross-platform support claim has been established
 No commit, push or publication is required by this workflow. Work not exercised
 must remain listed as unverified. Steps 010–012 add component metadata,
 serialization and the core component types. Step 013 adds entity allocation;
-Step 015 adds minimal World state; entity lifecycle and simulation execution
-remain planned.
+Step 015 adds minimal World state and Step 016 adds entity creation/deletion;
+Step 017 adds component access and mutation; Step 018 adds queries and counts.
+Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
+Simulation execution remains planned.

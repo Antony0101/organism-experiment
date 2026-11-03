@@ -729,3 +729,80 @@ Confirm scope is limited to the core component module, required package exports,
 - Integration boundary: the documented constructor signature includes modules, but nonempty module requests explicitly raise NotImplementedError until module installation is built in Phase 4. They are never silently ignored. Layers, terrain, scheduler, commands, actions, events and spatial services are not initialized yet; they will be connected in their owning steps. Component/entity lifecycle methods remain for Step 016 onward. These temporary omissions follow Step 015's restriction against importing future subsystems.
 - Updated README and plan status. Final scope and preservation checks follow below.
 - Final review passed: baseline hashes limit changes to World implementation/exports/tests and four status documents; all prior work and staged state are preserved. Exactly 15 steps are checked and 179 pending. `git diff --check` passed without output. Reviewed constructor validation, settings/resource ownership and the absence of future-service imports.
+
+## Step 016 — Implement entity creation and deletion
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 017 — Implement component access and mutation. **Phase 1:** in progress.
+
+- Added World.spawn, despawn and the minimal is_alive allocator wrapper in `simworld/world.py`. Spawn resolves registered component names, rejects duplicate component types and invalid component arguments, validates optional unique string names, and only then allocates and stores the supplied component instances. Empty entities and empty-string names are supported.
+- Initialized both name maps here because named creation and deletion require them. Public rename/name lookup APIs remain Step 019. Despawn checks liveness before mutation, removes the id from every component store and both name maps, and releases its slot. Store dictionaries remain available when emptied.
+- Added ten cases in `tests/test_world.py`, including failure atomicity on a reusable allocator slot, duplicate components/names, unregistered objects and non-instance component arguments, survivor preservation, stale deletion after reuse, empty entities and independent worlds.
+- Read Step 016 and §5.7; inspected guidance/status and saved baseline hashes/staged state to `/tmp/simworld-step016-baseline.json`. No applicable AGENTS.md was found; the initial working tree was clean.
+- Tests first: `.venv/bin/python -m pytest tests/test_world.py -o addopts='' -q` produced **10 failed, 7 passed in 0.50s** because spawn was missing. After implementation: **17 passed in 0.16s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **114 passed in 0.29s**.
+- Spawn accepts component instances; registered classes/names remain lookup inputs rather than stored data. Names must be strings or None. Spatial-hash removal is deferred until the spatial service exists; no future-service placeholders, component-access APIs or naming APIs were added. README and plan status updated.
+- Final review passed: snapshot comparison limits this step to World lifecycle/tests plus four status documents, with staged state preserved. Exactly 16 steps are checked and 178 pending. `git diff --check` passed without output; reviewed validation-before-allocation and cleanup-before-slot-reuse paths.
+
+## Step 017 — Implement component access and mutation
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 018 — Implement deterministic queries and counts. **Phase 1:** in progress.
+
+- Added World.add/remove/get/try_get/has/components_of in `simworld/world.py`. Lookup/removal resolve registered component names, classes or instances; add accepts instances and replaces an existing component without changing its store position. Variadic add/remove validate every argument before mutating stores.
+- Get uses direct store lookup first, then distinguishes stale ids from missing components. MissingComponentError includes the entity id, requested component and existing types. Optional reads check liveness first, returning None/False for dead or invalid ids. Has uses membership rather than component truthiness; components_of returns a new dictionary retaining original component references.
+- Added 14 cases in `tests/test_world.py` for reference forms, replacement/removal, all-component membership, missing/stale diagnostics, malformed/dead ids, slot reuse, independent mapping results, atomic validation errors and false-valued components.
+- Read Step 017/§5.7, guidance and status; saved baseline content/staged hashes in `/tmp/simworld-step017-baseline.json`. No applicable AGENTS.md was found. Preserved existing Step 016 changes.
+- Tests first: `.venv/bin/python -m pytest tests/test_world.py -o addopts='' -q`: **14 failed, 17 passed in 0.61s**, reflecting missing access/mutation methods. After implementation: **31 passed in 0.22s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **128 passed in 0.31s**.
+- Decisions for unspecified details: removing an absent registered component is harmless; add replaces components of the same registered name (later arguments win), and add/remove return None. Unknown component names still raise on live entities. Queries, counts and naming methods remain in their owning steps. README and plan status updated.
+- Final review passed: baseline comparison confirms only component access/mutation, focused tests and four status documents changed this turn. Prior Step 016 work and staged state are preserved; exactly 17 steps are checked and 177 pending. `git diff --check` passed without output. Reviewed lookup/error ordering, validation-before-mutation and component identity preservation.
+
+## Step 018 — Implement deterministic queries and counts
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 019 — Implement entity naming. **Phase 1:** in progress.
+
+- Added World.query and its store/iterator helpers in `simworld/world.py`, following the §5.7 sketch: select the smallest requested store (first argument wins size ties), snapshot its items at query-call time, preserve argument order in returned tuples, apply any-type exclusions and recheck base membership before yielding. Includes the specified single-store fast path.
+- Added entities as a fresh list of live ids in allocator slot order, using current generations and including empty entities. Count delegates component filters/exclusions to query; with no component arguments it returns the allocator's live count, as specified.
+- Added ten cases in `tests/test_world.py` covering order/ties, tuple layout, exclusions/intersections, removal during iteration, snapshot timing, slot reuse, base/non-base removal, immediate errors, entity listing and counts.
+- Read Step 018/§5.7 and checked guidance/status; saved baseline content and staged state in `/tmp/simworld-step018-baseline.json`. No applicable AGENTS.md was found. Earlier work is preserved.
+- Tests first: `.venv/bin/python -m pytest tests/test_world.py -o addopts='' -q`: **10 failed, 31 passed in 0.64s**, due to missing query/entity listing methods. After implementation: **41 passed in 0.24s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **138 passed in 0.36s**.
+- Query snapshots capture base component references, while other stores and exclusions are read during iteration, matching the blueprint sketch. Determinism here means stable store/slot ordering; concurrent mutation is not supported. Naming, prefabs and scheduling remain for later steps. Updated README and plan status.
+- Final review passed: baseline comparison confirms only query/list/count implementation, focused tests and four status documents changed this turn; prior work and staged state are preserved. Exactly 18 steps are checked and 176 pending. `git diff --check` passed without output. Reviewed snapshot timing, tie-breaking, membership checks and current-generation id reconstruction.
+
+## Step 019 — Implement entity naming
+
+**Status:** complete. **Date:** 2026-10-30. **Next:** Step 020 — Implement prefab templates and overrides. **Phase 1:** in progress.
+
+- Added World.set_name/entity/name_of in `simworld/world.py`. Renaming validates liveness, name type and uniqueness before changing either map. None removes a name, an unchanged name is a no-op and empty-string names remain supported. Existing spawn/despawn naming behavior is preserved.
+- Entity lookup raises UnknownNameError with kind="entity" and known-name suggestions. Name_of checks liveness and returns None for an unnamed live entity. These clarify behavior not detailed in §5.7; set_name returns None, consistent with other mutations.
+- Added eight cases in `tests/test_world.py`: rename/removal/lookup, same-name and empty-string behavior, duplicate/invalid edits without state changes, stale ids after slot reuse, and suggestions. No prefab or scheduler work was introduced.
+- Read Step 019/§5.7 and name-error conventions, inspected guidance/status, and saved baseline hashes/staged state in `/tmp/simworld-step019-baseline.json`. No applicable AGENTS.md was found.
+- Tests first: `.venv/bin/python -m pytest tests/test_world.py -o addopts='' -q`: **8 failed, 41 passed in 0.82s** for missing naming methods. After implementation: **49 passed in 0.24s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **146 passed in 0.41s**. README and plan status updated.
+- Final review passed: baseline comparison limits changes to naming implementation/tests and four status documents, preserving prior work and staged state. Exactly 19 steps are checked and 175 pending. `git diff --check` passed without output. Reviewed validation-before-mutation, empty-name handling and generation checks on stale edits.
+
+## Step 020 — Implement prefab templates and overrides
+
+**Status:** complete. **Date:** 2026-10-31. **Next:** Step 021 — Define systems and registration context. **Phase 1:** in progress.
+
+- Added World.define_prefab/spawn_prefab/prefabs and private builder helpers in `simworld/world.py`. Definitions normalize registered names/classes, copy field data and construct each component once to validate before publishing the template. Spawns copy templates, merge component-field dictionaries or dotted Component.field overrides, accept copied component-instance replacements, and remove types overridden with None before calling spawn.
+- Added seven focused cases in `tests/test_prefabs.py` for partial defaults, mapping inputs, tuple restoration, field merging, instance replacement/removal/addition, mutable isolation, immediate definition failures, failed-spawn allocation safety and missing-prefab suggestions.
+- Read Step 020/§5.7 and existing serialization contracts; inspected guidance/status and saved content/staged baseline in `/tmp/simworld-step020-baseline.json`. No applicable AGENTS.md was found. Previous work is preserved.
+- Tests first: `.venv/bin/python -m pytest tests/test_prefabs.py -o addopts='' -q`: **7 failed in 0.59s**, because define_prefab was missing. After implementation the focused command produced **7 passed in 0.35s**. Extended the replacement case to cover a subsequent dotted override and rejection of an unknown field without changing the caller's instance.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **153 passed in 0.66s**.
+- Decisions for unspecified details: redefining a prefab replaces it only after successful validation; prefabs returns a deep-copy snapshot; overrides apply in supplied order and merge at the component-field level, while dotted keys address Component.field. Arbitrary nested object-path traversal is not added. Mismatched component replacements are rejected. All building/override validation finishes before allocation; instance replacements are copied without serializing away runtime fields. Scheduling, active-world context and plugin helper exports remain for their owning steps. README and plan status updated.
+- Final review passed: baseline comparison limits changes to prefab implementation/tests and four status documents, preserving prior work and staged state. Exactly 20 steps are checked and 174 pending. `git diff --check` passed without output. Reviewed copy boundaries, replacement validation and publish/allocation ordering.
+
+## Step 021 — Define systems and registration context
+
+**Status:** complete. **Date:** 2026-10-31. **Next:** Step 022 — Schedule systems in stable stages. **Phase 1:** in progress.
+
+- Added the specified stack-based active_world/loading_into context to `simworld/registry.py`. Nested contexts route to the innermost world and unwind in finally, including when registration raises.
+- Added `simworld/systems.py` with SystemDef fields from §5.8 and bare/called @system forms. The decorator preserves function identity, attaches SystemDef as __sim_system__, records docstrings and read/write tuples, and registers only when active_world is present. Base_order captures the original order when unspecified. Reads/writes remain descriptive.
+- Added World.add_system/register for explicit registration, copying definitions to avoid sharing world-local enabled/order state with decorator metadata or other worlds, retaining the current module origin and rejecting duplicate names. Exported system from the package root. Plain functions can be passed to add_system; register currently accepts decorated functions and SystemDef values, with other extension kinds deferred.
+- Added five tests in `tests/test_systems.py` for definition/decorator defaults, explicit and automatic registration, independent world-owned copies, nested/error context restoration, module origins and overrides.
+- Read Step 021/§§5.2, 5.8 and inspected guidance/status; saved baseline content/staged state in `/tmp/simworld-step021-baseline.json`. No applicable AGENTS.md was found.
+- Tests first: `.venv/bin/python -m pytest tests/test_systems.py -o addopts='' -q` failed at collection as expected because active_world did not exist. After implementation: **5 passed in 0.37s**.
+- Regression command: `.venv/bin/python -m pytest tests -o addopts='' -q`: **158 passed in 0.61s**.
+- Integration boundary: World temporarily holds registrations in _systems. Step 022 will connect Scheduler and stage validation, sequence assignment, ordering, caching and execution gating. Step 025 owns World.system and the run loop. No execution stubs, scheduling logic or event/action registration were introduced. This keeps the Step 021 registration surface usable without importing a future Scheduler. README and plan status updated.
+- Final review passed: baseline comparison limits this turn to system metadata/context/registration, root export, focused tests and four status documents; prior work and staged state are preserved. Exactly 21 steps are checked and 173 pending, with Scheduler still deferred. `git diff --check` passed without output. Reviewed context unwinding, definition ownership and duplicate registration paths.

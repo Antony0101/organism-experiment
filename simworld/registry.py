@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses as dc
 import typing as t
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -14,7 +15,29 @@ from .errors import NotAComponentError, SerializationError
 __all__ = [
     "Registry", "COMPONENTS", "FieldInfo", "ComponentInfo", "prop", "component",
     "component_name", "component_to_dict", "component_from_dict",
+    "active_world", "loading_into",
 ]
+
+if t.TYPE_CHECKING:
+    from .world import World
+
+
+_ACTIVE: list[World] = []
+
+
+def active_world() -> World | None:
+    """Return the innermost world accepting decorator registrations."""
+    return _ACTIVE[-1] if _ACTIVE else None
+
+
+@contextmanager
+def loading_into(world: World):
+    """Route decorator registrations to a world until this context exits."""
+    _ACTIVE.append(world)
+    try:
+        yield
+    finally:
+        _ACTIVE.pop()
 
 T = t.TypeVar("T")
 
