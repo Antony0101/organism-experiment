@@ -15,7 +15,7 @@ from .errors import (
     SerializationError, SimWorldError, UnknownNameError, UnknownPrefabError,
 )
 from .registry import component_from_dict, component_name
-from .systems import SystemDef
+from .systems import Scheduler, SystemDef
 
 
 __all__ = ["World", "WorldSettings"]
@@ -70,8 +70,8 @@ class World:
         self._names: dict[str, Entity] = {}
         self._entity_names: dict[Entity, str] = {}
         self._prefabs: dict[str, dict] = {}
-        # Registration storage until Scheduler is introduced in Step 022.
-        self._systems: dict[str, SystemDef] = {}
+        self.scheduler = Scheduler(self)
+        self._systems = self.scheduler.systems
         self._current_module: str | None = None
 
     def add_system(self, fn_or_SystemDef, **overrides) -> SystemDef:
@@ -90,9 +90,7 @@ class World:
         registered = dc.replace(definition, **overrides)
         if self._current_module is not None:
             registered.module = self._current_module
-        if registered.name in self._systems:
-            raise DuplicateNameError(f"A system named {registered.name!r} is already registered.")
-        self._systems[registered.name] = registered
+        self.scheduler.add(registered)
         return registered
 
     def register(self, *objs):

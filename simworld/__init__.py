@@ -27,11 +27,12 @@ from .components import Appearance, Position
 from .registry import COMPONENTS, component, prop
 from .ecs import entity_generation, entity_index
 from .world import World, WorldSettings
-from .systems import system
+from .systems import DEFAULT_STAGES, system
 
 __all__ = [
     *_error_names, "COMPONENTS", "component", "prop", "Position", "Appearance",
     "entity_index", "entity_generation",
     "World", "WorldSettings",
     "system",
+    "DEFAULT_STAGES",
 ]

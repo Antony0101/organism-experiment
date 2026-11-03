@@ -6,7 +6,7 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 **Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
 
-Steps 008–021 are complete; Steps 022–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 008–022 are complete; Steps 023–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
@@ -94,7 +94,7 @@ Steps 008–021 are complete; Steps 022–026 are unstarted. Check a box only af
 
 ### Step 022 — Schedule systems in stable stages
 
-- [ ] **Change:** Implement Scheduler stage management, ordered caching, enable flags, every-N gating and profiling.
+- [x] **Change:** Implement Scheduler stage management, ordered caching, enable flags, every-N gating and profiling.
 - **Verify:** Default stages and (order, registration sequence) ties are exact; edited membership/order invalidates the cache; reads/writes stay descriptive.
 - **Blueprint:** §§3.4, 5.8.
 

@@ -5,7 +5,7 @@ from [BLUEPRINT.md](BLUEPRINT.md).
 
 ## Current status
 
-Steps 001–021 are complete and **Phase 0's scaffold gate has passed**: editable
+Steps 001–022 are complete and **Phase 0's scaffold gate has passed**: editable
 installation, scaffold tests and imports outside the checkout were verified.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
 `Appearance` are available through `simworld`; `Parent` and registry metadata
@@ -21,11 +21,13 @@ Component access and mutation use `add`, `remove`, `get`, `try_get`, `has` and
 and `spawn_prefab` provide validated templates with independent component data.
 `@system` describes functions for explicit registration with `World.register`
 or automatic registration inside `simworld.registry.loading_into(world)`.
+`world.scheduler` orders and executes systems at the current tick, with enabled
+flags, every-N gating and optional profiling. World clock advancement is pending.
 Phase 1 is in progress.
-**Step 022 — Schedule systems in stable stages** in
+**Step 023 — Defer structural entity commands** in
 [Phase 1](plans/01-ecs.md) is next.
 
-System scheduling, built-in modules and the editor window arrive in later steps.
+Command buffers, World run loops, built-in modules and the editor arrive later.
 The declared `simworld-editor` entry point targets a future module and cannot
 launch yet. The current import example is:
 
@@ -129,4 +131,5 @@ serialization and the core component types. Step 013 adds entity allocation;
 Step 015 adds minimal World state and Step 016 adds entity creation/deletion;
 Step 017 adds component access and mutation; Step 018 adds queries and counts.
 Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
-Simulation execution remains planned.
+Steps 021–022 add system registration/context and stage scheduling. World run
+loops and command-buffer integration remain planned.
