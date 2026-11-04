@@ -9,7 +9,7 @@ from copy import deepcopy
 
 import numpy as np
 
-from .ecs import INDEX_BITS, Entity, EntityAllocator
+from .ecs import INDEX_BITS, CommandBuffer, Entity, EntityAllocator
 from .errors import (
     DuplicateNameError, MissingComponentError, NotAComponentError,
     SerializationError, SimWorldError, UnknownNameError, UnknownPrefabError,
@@ -70,6 +70,7 @@ class World:
         self._names: dict[str, Entity] = {}
         self._entity_names: dict[Entity, str] = {}
         self._prefabs: dict[str, dict] = {}
+        self.commands = CommandBuffer(self)
         self.scheduler = Scheduler(self)
         self._systems = self.scheduler.systems
         self._current_module: str | None = None
@@ -103,6 +104,17 @@ class World:
 
     def spawn(self, *components, name=None) -> Entity:
         """Validate and attach component instances to a newly allocated entity."""
+        prepared = self._prepare_spawn(components, name)
+        entity = self._alloc.alloc()
+        for registered_name, comp in prepared.items():
+            self._stores.setdefault(registered_name, {})[entity] = comp
+        if name is not None:
+            self._names[name] = entity
+            self._entity_names[entity] = name
+        return entity
+
+    def _prepare_spawn(self, components, name) -> dict:
+        """Validate a complete spawn before changing stores or name maps."""
         prepared = {}
         for comp in components:
             registered_name = component_name(comp)
@@ -117,13 +129,14 @@ class World:
             if name in self._names:
                 raise DuplicateNameError(f"An entity named {name!r} already exists.")
 
-        entity = self._alloc.alloc()
-        for registered_name, comp in prepared.items():
-            self._stores.setdefault(registered_name, {})[entity] = comp
-        if name is not None:
-            self._names[name] = entity
-            self._entity_names[entity] = name
-        return entity
+        return prepared
+
+    def _finish_spawn(self, e: Entity, components, name) -> None:
+        """Attach a queued spawn to its already reserved entity id."""
+        self._alloc.check(e)
+        prepared = self._prepare_spawn(components, name)
+        self.add(e, *prepared.values())
+        self.set_name(e, name)
 
     def despawn(self, e: Entity) -> None:
         """Remove a live entity's components and name, then release its slot."""

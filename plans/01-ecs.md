@@ -6,7 +6,7 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 **Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
 
-Steps 008–022 are complete; Steps 023–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 008–023 are complete; Steps 024–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
@@ -100,7 +100,7 @@ Steps 008–022 are complete; Steps 023–026 are unstarted. Check a box only af
 
 ### Step 023 — Defer structural entity commands
 
-- [ ] **Change:** Implement CommandBuffer spawn/prefab reservation, despawn/add/remove/defer and queue-ordered apply rounds.
+- [x] **Change:** Implement CommandBuffer spawn/prefab reservation, despawn/add/remove/defer and queue-ordered apply rounds.
 - **Verify:** Reserved ids are alive but absent from component queries until applied; subsequent queued operations can target them; recursive defers are bounded.
 - **Blueprint:** §5.3.
 

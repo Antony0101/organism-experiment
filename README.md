@@ -3,9 +3,13 @@
 A general-purpose 2D simulation engine and scene editor, being built incrementally
 from [BLUEPRINT.md](BLUEPRINT.md).
 
+For a detailed explanation of the implemented engine, read the
+[developer guide](docs/developer-guide.md). It covers architecture, runnable
+examples, API behavior, internal data flow, and current implementation limits.
+
 ## Current status
 
-Steps 001–022 are complete and **Phase 0's scaffold gate has passed**: editable
+Steps 001–023 are complete and **Phase 0's scaffold gate has passed**: editable
 installation, scaffold tests and imports outside the checkout were verified.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
 `Appearance` are available through `simworld`; `Parent` and registry metadata
@@ -23,11 +27,15 @@ and `spawn_prefab` provide validated templates with independent component data.
 or automatic registration inside `simworld.registry.loading_into(world)`.
 `world.scheduler` orders and executes systems at the current tick, with enabled
 flags, every-N gating and optional profiling. World clock advancement is pending.
+`world.commands` queues spawn/prefab, despawn, add/remove and callback operations.
+Spawned ids are reserved immediately; components and names attach on `apply()`.
+Application drains callback-generated work in bounded rounds. Stale-target
+skipping and automatic scheduler flushing remain for Steps 024–025.
 Phase 1 is in progress.
-**Step 023 — Defer structural entity commands** in
+**Step 024 — Handle stale queued targets** in
 [Phase 1](plans/01-ecs.md) is next.
 
-Command buffers, World run loops, built-in modules and the editor arrive later.
+World run loops, built-in modules and the editor arrive later.
 The declared `simworld-editor` entry point targets a future module and cannot
 launch yet. The current import example is:
 
@@ -131,5 +139,6 @@ serialization and the core component types. Step 013 adds entity allocation;
 Step 015 adds minimal World state and Step 016 adds entity creation/deletion;
 Step 017 adds component access and mutation; Step 018 adds queries and counts.
 Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
-Steps 021–022 add system registration/context and stage scheduling. World run
-loops and command-buffer integration remain planned.
+Steps 021–022 add system registration/context and stage scheduling. Step 023
+adds deferred structural commands. Stale-target handling and World run loops
+with automatic command flushing remain planned.

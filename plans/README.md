@@ -2,11 +2,11 @@
 
 This plan turns [BLUEPRINT.md](../BLUEPRINT.md) into **194 sequential steps across 11 phases**. Each step is a small coding session with a concrete change, a verification target and source sections. The intended rhythm is read, test, implement, inspect, record, then stop at the step boundary.
 
-**Current status: Steps 001–022 complete (22/194); Phase 0's gate passed. Step 023 is next.** Engine errors, registries, components, entity allocation/lifecycle, World state, queries/counts, naming, prefabs, system registration/context and stage scheduling are implemented; Phase 1 remains in progress. Exact installed versions are in [requirements-dev.txt](../requirements-dev.txt). See [plans/progress.md](progress.md) for evidence and limitations.
+**Current status: Steps 001–023 complete (23/194); Phase 0's gate passed. Step 024 is next.** Engine errors, registries, components, entity allocation/lifecycle, World state, queries/counts, naming, prefabs, system registration/context stage scheduling and deferred structural commands are implemented; Phase 1 remains in progress. Exact installed versions are in [requirements-dev.txt](../requirements-dev.txt). See [plans/progress.md](progress.md) for evidence and limitations.
 
 ## Start here
 
-Read this file, the [progress log](progress.md), then open [Phase 1](01-ecs.md) and continue with Step 023 when requested. Use the global step number when asking for work, for example: “Implement Step 023 only.” Every step depends on its predecessor, and every phase depends on the preceding phase's exit gate. This deliberately favors a single reviewable sequence over parallel work.
+Read this file, the [progress log](progress.md), then open [Phase 1](01-ecs.md) and continue with Step 024 when requested. Use the global step number when asking for work, for example: “Implement Step 024 only.” Every step depends on its predecessor, and every phase depends on the preceding phase's exit gate. This deliberately favors a single reviewable sequence over parallel work.
 
 | Blueprint phase | Plan | Steps | Count |
 | --- | --- | --- | ---: |

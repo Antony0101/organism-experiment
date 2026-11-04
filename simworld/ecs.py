@@ -1,6 +1,13 @@
-"""Entity ids and generation-aware slot allocation."""
+"""Entity ids, generation-aware allocation and deferred structural commands."""
+
+from __future__ import annotations
+
+import typing as t
 
 from .errors import StaleEntityError
+
+if t.TYPE_CHECKING:
+    from .world import World
 
 
 Entity = int
@@ -9,7 +16,7 @@ INDEX_MASK = (1 << INDEX_BITS) - 1
 
 __all__ = [
     "Entity", "INDEX_BITS", "INDEX_MASK", "entity_index", "entity_generation",
-    "EntityAllocator",
+    "EntityAllocator", "CommandBuffer",
 ]
 
 
@@ -126,3 +133,58 @@ class EntityAllocator:
         allocator.alive = list(data["alive"])
         allocator.free = list(data["free"])
         return allocator
+
+
+class CommandBuffer:
+    """Queue world mutations, reserving spawned ids before attaching their data."""
+
+    def __init__(self, world: World):
+        self._world = world
+        self._ops: list[tuple[str, tuple, dict]] = []
+
+    def spawn(self, *components, name=None) -> Entity:
+        """Reserve a live id now; validate and attach components at apply time."""
+        entity = self._world._alloc.alloc()
+        self._ops.append(("spawn", (entity, components, name), {}))
+        return entity
+
+    def spawn_prefab(self, prefab, *, entity_name=None, **overrides) -> Entity:
+        """Build independent prefab components now, then queue their attachment."""
+        components = self._world._prefab_components(prefab, overrides)
+        return self.spawn(*components, name=entity_name)
+
+    def despawn(self, e: Entity) -> None:
+        self._ops.append(("despawn", (e,), {}))
+
+    def add(self, e: Entity, *components) -> None:
+        self._ops.append(("add", (e, components), {}))
+
+    def remove(self, e: Entity, *components) -> None:
+        self._ops.append(("remove", (e, components), {}))
+
+    def defer(self, fn: t.Callable[[World], None]) -> None:
+        """Queue a callback that receives the world when applied."""
+        self._ops.append(("defer", (fn,), {}))
+
+    def apply(self, world=None, max_rounds=100) -> int:
+        """Apply queued operations in order, then drain work queued by callbacks."""
+        world = self._world if world is None else world
+        applied = rounds = 0
+        while self._ops:
+            rounds += 1
+            if rounds > max_rounds:
+                raise RuntimeError("Command buffer did not settle (commands keep queueing commands).")
+            ops, self._ops = self._ops, []
+            for op, args, _ in ops:
+                if op == "spawn":
+                    world._finish_spawn(*args)
+                elif op == "despawn":
+                    world.despawn(args[0])
+                elif op == "add":
+                    world.add(args[0], *args[1])
+                elif op == "remove":
+                    world.remove(args[0], *args[1])
+                else:
+                    args[0](world)
+                applied += 1
+        return applied
