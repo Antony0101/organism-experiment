@@ -141,6 +141,8 @@ class CommandBuffer:
     def __init__(self, world: World):
         self._world = world
         self._ops: list[tuple[str, tuple, dict]] = []
+        self.skipped: int = 0
+        self.strict: bool = False
 
     def spawn(self, *components, name=None) -> Entity:
         """Reserve a live id now; validate and attach components at apply time."""
@@ -167,7 +169,7 @@ class CommandBuffer:
         self._ops.append(("defer", (fn,), {}))
 
     def apply(self, world=None, max_rounds=100) -> int:
-        """Apply queued operations in order, then drain work queued by callbacks."""
+        """Return successful op count; accumulate stale skips unless strict is enabled."""
         world = self._world if world is None else world
         applied = rounds = 0
         while self._ops:
@@ -176,15 +178,20 @@ class CommandBuffer:
                 raise RuntimeError("Command buffer did not settle (commands keep queueing commands).")
             ops, self._ops = self._ops, []
             for op, args, _ in ops:
-                if op == "spawn":
-                    world._finish_spawn(*args)
-                elif op == "despawn":
-                    world.despawn(args[0])
-                elif op == "add":
-                    world.add(args[0], *args[1])
-                elif op == "remove":
-                    world.remove(args[0], *args[1])
-                else:
-                    args[0](world)
-                applied += 1
+                try:
+                    if op == "spawn":
+                        world._finish_spawn(*args)
+                    elif op == "despawn":
+                        world.despawn(args[0])
+                    elif op == "add":
+                        world.add(args[0], *args[1])
+                    elif op == "remove":
+                        world.remove(args[0], *args[1])
+                    else:
+                        args[0](world)
+                    applied += 1
+                except StaleEntityError:
+                    if self.strict:
+                        raise
+                    self.skipped += 1
         return applied

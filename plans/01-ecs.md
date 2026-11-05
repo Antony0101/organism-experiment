@@ -6,7 +6,7 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 **Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
 
-Steps 008–023 are complete; Steps 024–026 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 008–025 are complete; Step 026 is unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
@@ -106,13 +106,13 @@ Steps 008–023 are complete; Steps 024–026 are unstarted. Check a box only af
 
 ### Step 024 — Handle stale queued targets
 
-- [ ] **Change:** Add skipped accounting and strict mode; cover repeated despawns and operations queued by applied operations.
+- [x] **Change:** Add skipped accounting and strict mode; cover repeated despawns and operations queued by applied operations.
 - **Verify:** Default mode skips and counts stale targets; strict mode raises; non-stale exceptions propagate without being mislabeled.
 - **Blueprint:** §5.3.
 
 ### Step 025 — Connect scheduled steps and run loops
 
-- [ ] **Change:** Wire World system decorators/register/enable APIs, step/run and per-system command flushing; leave event-stage dispatch for Phase 3.
+- [x] **Change:** Wire World system decorators/register/enable APIs, step/run and per-system command flushing; leave event-stage dispatch for Phase 3.
 - **Verify:** Systems see prior-system structural edits; tick/time advance once; dt overrides are temporary; callback False stops run.
 - **Blueprint:** §§3.4, 5.7–5.8.
 

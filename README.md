@@ -9,7 +9,7 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–023 are complete and **Phase 0's scaffold gate has passed**: editable
+Steps 001–025 are complete and **Phase 0's scaffold gate has passed**: editable
 installation, scaffold tests and imports outside the checkout were verified.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
 `Appearance` are available through `simworld`; `Parent` and registry metadata
@@ -26,16 +26,21 @@ and `spawn_prefab` provide validated templates with independent component data.
 `@system` describes functions for explicit registration with `World.register`
 or automatic registration inside `simworld.registry.loading_into(world)`.
 `world.scheduler` orders and executes systems at the current tick, with enabled
-flags, every-N gating and optional profiling. World clock advancement is pending.
+flags, every-N gating and optional profiling. `world.step()` advances the clock
+after a successful pass; `world.run(steps, dt=None, callback=None)` repeats steps.
+`@world.system(...)` registers directly; enable/disable methods control execution.
 `world.commands` queues spawn/prefab, despawn, add/remove and callback operations.
 Spawned ids are reserved immediately; components and names attach on `apply()`.
-Application drains callback-generated work in bounded rounds. Stale-target
-skipping and automatic scheduler flushing remain for Steps 024–025.
+Application drains callback-generated work in bounded rounds. Stale operations
+are skipped and counted in `world.commands.skipped`; setting
+`world.commands.strict = True` raises instead. Other exceptions propagate.
+The scheduler flushes commands after each system and at stage boundaries.
+A step-level dt override is temporary, and a run callback returning False stops it.
 Phase 1 is in progress.
-**Step 024 — Handle stale queued targets** in
+**Step 026 — Verify the ECS milestone** in
 [Phase 1](plans/01-ecs.md) is next.
 
-World run loops, built-in modules and the editor arrive later.
+Built-in modules and the editor arrive later.
 The declared `simworld-editor` entry point targets a future module and cannot
 launch yet. The current import example is:
 
@@ -139,6 +144,6 @@ serialization and the core component types. Step 013 adds entity allocation;
 Step 015 adds minimal World state and Step 016 adds entity creation/deletion;
 Step 017 adds component access and mutation; Step 018 adds queries and counts.
 Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
-Steps 021–022 add system registration/context and stage scheduling. Step 023
-adds deferred structural commands. Stale-target handling and World run loops
-with automatic command flushing remain planned.
+Steps 021–022 add system registration/context and stage scheduling. Steps 023–024
+add deferred structural commands and stale-target handling. Step 025 connects
+World run loops and automatic command flushing. Phase 1 verification is next.

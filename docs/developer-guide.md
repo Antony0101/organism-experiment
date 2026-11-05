@@ -1,14 +1,14 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–023 complete**, as of
+package version **0.1.0**, with implementation **Steps 001–025 complete**, as of
 **4 November 2026**. The step number matters: the package version alone does not
 identify which parts of the blueprint have been built.
 
 You can create entities, attach data, query that data, define reusable templates,
 register systems, schedule their execution, and queue structural changes. The
-engine currently requires explicit calls to run the scheduler and apply queued
-commands. `World.step()` and `World.run()` do not exist yet.
+engine exposes `World.step()` and `World.run()` to execute systems, apply queued
+commands between systems, and advance the simulation clock.
 
 Start with the walkthrough, then follow the sections on the parts you want to
 understand. Each Python code block is a complete example that can run in a fresh
@@ -70,17 +70,14 @@ def move(world):
             world.commands.add(entity, Appearance(size=2))
 
 world.register(move)
-world.scheduler.run_step()
+world.step()
 
-# Component fields change immediately when the system changes them.
+# The system changes fields and its queued addition is applied before it finishes
+# its scheduled turn. The clock advances after the whole pass succeeds.
 assert world.get(walker, Position).x == 4
-# The structural addition is still queued.
-assert not world.has(walker, Appearance)
-assert world.commands.apply() == 1
 assert world.get(walker, Appearance).size == 2
-
-# Scheduler execution currently leaves the clock unchanged.
-assert world.tick == 0 and world.time == 0.0
+assert world.commands.apply() == 0
+assert world.tick == 1 and world.time == 0.5
 ```
 
 `walker` is an integer identifying an entity. `Position` and `Velocity` instances
@@ -88,10 +85,9 @@ hold that entity's data. `move` supplies behavior. The world stores the data and
 the scheduler calls the behavior. The command buffer delays the addition of a
 component until `apply()`.
 
-Running the scheduler repeatedly currently repeats execution at the same tick.
-This example deliberately runs one pass; it does not implement the future World
-run loop. Applying commands once after a whole scheduler pass also does not
-provide the planned visibility of changes between individual systems.
+Use `world.run(steps)` for repeated steps. Direct `world.scheduler.run_step()`
+executes and flushes commands at the current tick, while leaving time and tick
+unchanged. World.step owns clock advancement.
 
 ## Architecture and source map
 
@@ -614,6 +610,12 @@ enabled/order metadata does not alter another world's copy or the decorator's
 original definition. The function itself remains shared; state captured by its
 closure can therefore still be shared. Overrides adjust fields on the copy.
 The scheduler assigns seq, and an active `_current_module` supplies module origin.
+Use `@world.system(...)` to decorate and register directly into a particular
+world; this bound form requires parentheses and accepts the same scheduling
+options as @system. It temporarily routes registration into that world even
+inside another loading context, then restores the outer context.
+`world.enable_system(name, enabled=True)` and `world.disable_system(name)` delegate
+to the scheduler and raise UnknownSystemError for an unknown system.
 Duplicate system names are rejected. Multi-object register calls are sequential,
 not transactional: earlier registrations remain if a later one fails.
 
@@ -665,7 +667,7 @@ system with order 100 runs before an update system with order -100.
 | `remove(name)` | Remove a definition and invalidate ordering |
 | `set_enabled(name, enabled)` | Change enabled state using bool conversion |
 | `ordered()` | Return all definitions in stage/order/sequence order, including disabled ones |
-| `run_step()` | Run eligible definitions at the current tick |
+| `run_step()` | Run eligible definitions and flush commands at the current tick without advancing it |
 
 Add_stage rejects duplicate stage names, unknown anchors, and supplying both
 before and after. Add rejects unknown stages and duplicate names unless explicit
@@ -718,15 +720,64 @@ when predictable membership is needed.
 
 Set `scheduler.profile = True` to accumulate execution duration in seconds under
 `scheduler.timings[name]`. The timer uses perf_counter and measures the system
-function. A finally block records duration even if the function raises. Timings
+function and its following command-buffer application. A finally block records
+duration even if the function or its command application raises. Timings
 accumulate across passes and can be cleared with `scheduler.timings.clear()`.
-Manual command application outside run_step is not included in those durations.
+Stage-boundary and manual command application are outside those per-system timers.
 
-A system exception propagates and stops the pass; prior component mutations are
-not rolled back. Run_step does not advance time/tick, apply commands, or dispatch
-events in this version. These integration boundaries matter when composing systems:
-a later system can see earlier direct field edits but cannot see an earlier queued
-addition until commands are explicitly applied.
+A system or command-application exception propagates and stops the pass; prior
+mutations are not rolled back. After each eligible system returns, run_step
+applies its commands before invoking the next system. It also flushes at the end
+of every stage, including empty stages, so pending commands are applied even with
+no systems registered. Direct field edits and applied structural changes are
+visible to later systems. Run_step does not advance time/tick or dispatch events;
+event dispatch will be inserted before stage-boundary flushing in Phase 3.
+
+### World steps and run loops
+
+`world.step(dt=None)` executes one scheduler pass. All systems in that pass see
+its current tick and time; after successful completion, time increases by the
+selected dt and tick increases by one. A supplied dt overrides the resource only
+for that step. The prior value is restored in finally, including when a system or
+command raises. A zero override is valid: the tick advances while time stays fixed.
+WorldSettings.dt remains unchanged.
+
+`world.run(steps, dt=None, callback=None)` calls step repeatedly and returns the
+same World. If supplied, callback receives that world after each completed step,
+with its clock advanced and the ordinary dt restored. Returning the literal False
+stops the loop; other values, including None and 0, continue. Zero or negative
+steps execute no passes, following Python range behavior.
+
+```python
+from simworld import Position, World
+
+world = World(dt=0.5)
+entity = world.spawn(Position())
+
+@world.system(stage="act")
+def move(w):
+    w.get(entity, Position).x += w.dt
+
+def stop_at_three(w):
+    return w.tick < 3
+
+assert world.run(10, dt=0.25, callback=stop_at_three) is world
+assert world.tick == 3 and world.time == 0.75
+assert world.get(entity, Position).x == 0.75
+assert world.dt == world.settings.dt == 0.5
+world.disable_system("move")
+world.step()
+assert world.tick == 4 and world.time == 1.25
+assert world.get(entity, Position).x == 0.75
+```
+
+A failed scheduler pass leaves time and tick unchanged but retains earlier
+mutations. It is not an atomic transaction. A callback failure happens after a
+successful step, so that step's clock advancement remains and later steps do not
+run. Exceptions propagate to the caller. The clock increment uses the dt selected
+at entry; changing the dt resource inside a system does not change that increment,
+and the original resource value is restored on exit. Nested step/run calls on the
+same world are not a supported simulation pattern.
 
 ## Deferred commands
 
@@ -743,7 +794,7 @@ edit and needs no buffer.
 | `add(e, *components)` | Queue attachment/replacement |
 | `remove(e, *components)` | Queue removal |
 | `defer(fn)` | Queue a callback receiving the world |
-| `apply(world=None, max_rounds=100)` | Execute queued operations and return the number applied |
+| `apply(world=None, max_rounds=100)` | Execute queued operations and return the number successfully applied, excluding stale skips |
 
 Apply defaults to the buffer's owning world. The explicit world argument is an
 integration hook; pass the same owning world. Reservations always use the owning
@@ -819,10 +870,56 @@ unprocessed round remains pending when the round limit is reached.
 
 ### Exceptions and partial progress
 
-At Step 023, a stale target raises StaleEntityError and stops application.
-`commands.skipped` and `commands.strict` are not implemented yet. Repeatedly
-queueing deletion of the same entity therefore currently raises on the second
-deletion. Step 024 is planned to introduce stale-target handling.
+By default, apply catches StaleEntityError for each operation, increments
+`commands.skipped`, and continues to later operations and rounds. For example,
+two systems may both request deletion of the same entity: the first deletion
+succeeds, and the second is skipped. An old id cannot mutate a replacement entity
+that reused its slot with a newer generation.
+
+```python
+from simworld import Position, World
+
+world = World()
+entity = world.spawn(Position())
+world.commands.despawn(entity)
+world.commands.despawn(entity)
+assert world.commands.apply() == 1
+assert world.commands.skipped == 1
+assert not world.is_alive(entity)
+
+# The return value counts successes in this call; skipped is cumulative.
+assert world.commands.apply() == 0
+assert world.commands.skipped == 1
+```
+
+Each buffer starts with `skipped=0` and `strict=False`. Skipped counts accumulate
+across apply calls, including empty calls. Assign `commands.skipped = 0` when an
+explicit reset is needed. Set `commands.strict = True` to re-raise the original
+StaleEntityError and stop application; a strict-mode failure does not increment
+skipped. Other buffers' settings and counters are independent.
+
+```python
+from simworld import StaleEntityError, World
+
+world = World()
+entity = world.spawn()
+world.despawn(entity)
+world.commands.strict = True
+world.commands.despawn(entity)
+try:
+    world.commands.apply()
+except StaleEntityError:
+    pass
+else:
+    raise AssertionError("Strict mode must report the stale target.")
+assert world.commands.skipped == 0
+```
+
+The same handling applies to StaleEntityError raised inside a deferred callback.
+The callback's earlier side effects remain, and anything it already queued still
+belongs to the next round. In default mode, that callback counts as one skipped
+operation. MissingComponentError, DuplicateNameError, and other non-stale
+exceptions propagate in both modes; they do not increment skipped.
 
 Application is not transactional. Successful earlier operations remain applied.
 Because the current round was detached from `_ops`, the unexecuted remainder of
@@ -830,10 +927,10 @@ that detached round is not retried after an exception. Operations already queued
 into the next round remain pending. A failed spawn leaves its reservation alive;
 the engine does not automatically release that id or undo earlier work.
 
-These rules also apply to exceptions from callbacks. A callback is arbitrary code
-and can mutate state before it raises. Callers that catch application errors must
-inspect the resulting state rather than assuming the buffer represents a retryable
-transaction.
+These rules also apply to propagated exceptions from callbacks. A callback is
+arbitrary code and can mutate state before it raises. Callers that catch application
+errors must inspect the resulting state rather than assuming the buffer represents
+a retryable transaction.
 
 ## Errors and debugging
 
@@ -893,7 +990,8 @@ Use a focused file when changing one subsystem:
 | [test_world.py](../tests/test_world.py) | Construction, lifecycle, ownership, queries and naming |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
 | [test_systems.py](../tests/test_systems.py) | Registration context, ordering, cache, gating and profiling |
-| [test_commands.py](../tests/test_commands.py) | Reservations, ordered mutation, callback rounds and bounds |
+| [test_commands.py](../tests/test_commands.py) | Reservations, ordered mutation, callback rounds and bounds, stale skips, strict mode and exception propagation |
+| [test_run.py](../tests/test_run.py) | Bound registration, World clock/run loops, callbacks, temporary dt, command visibility and profiling |
 | [test_readme.py](../tests/test_readme.py) | Marked runnable examples in the root README |
 
 The clean_components fixture in [conftest.py](../tests/conftest.py) snapshots
@@ -916,10 +1014,10 @@ and use world.rng for random choices. Choose a stage and order explicitly where
 ordering matters. Register the function and verify it through the scheduler;
 calling the function directly does not test registration or execution gates.
 
-For structural mutation during behavior, decide where commands will be applied.
-In this version, the caller must establish that point. Test both the state before
-application and the state after it, especially when later commands refer to a
-reserved entity.
+For structural mutation during behavior, queue commands and let the scheduler
+apply them after the system returns. Test the state before and after application,
+especially when later commands refer to a reserved entity. When calling a system
+function directly outside the scheduler, apply commands explicitly.
 
 For engine changes, follow the [plan execution rules](../plans/README.md): select
 the next step, read its blueprint contract, write a meaningful failing test,
@@ -985,13 +1083,13 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations through Step 023. The following
+The implementation contains the ECS foundations through Step 025. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
 | --- | --- | --- |
-| Command errors | Stale targets propagate exceptions | Step 024 adds skipped accounting and strict mode |
-| Scheduler integration | Explicit execution and command application; clock unchanged | Step 025 adds World stepping/running and per-system flushing |
+| Command errors | Stale operations are skipped and counted by default; strict mode raises; other errors propagate | Implemented in Step 024 |
+| Scheduler integration | World stepping/running, per-system and stage-boundary command flushing, clock advancement | Implemented in Step 025; event dispatch remains Phase 3 |
 | ECS milestone | Individual behavior is covered by the accumulated suite | Step 026 performs the phase gate |
 | Layers, terrain, spatial queries, rendering | Not implemented | Phase 2 |
 | Events, actions, brains | Not implemented | Phase 3 |

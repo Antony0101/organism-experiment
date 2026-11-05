@@ -14,8 +14,8 @@ from .errors import (
     DuplicateNameError, MissingComponentError, NotAComponentError,
     SerializationError, SimWorldError, UnknownNameError, UnknownPrefabError,
 )
-from .registry import component_from_dict, component_name
-from .systems import Scheduler, SystemDef
+from .registry import component_from_dict, component_name, loading_into
+from .systems import Scheduler, SystemDef, system as system_decorator
 
 
 __all__ = ["World", "WorldSettings"]
@@ -100,6 +100,42 @@ class World:
             if not isinstance(obj, SystemDef) and not hasattr(obj, "__sim_system__"):
                 raise TypeError("register() currently expects @system functions or SystemDef values.")
             self.add_system(obj)
+        return self
+
+    def system(self, *, stage="update", order=0, reads=(), writes=(), name=None, every=1):
+        """Decorate and immediately register a system into this world."""
+        def decorate(fn):
+            with loading_into(self):
+                return system_decorator(
+                    fn, stage=stage, order=order, reads=reads, writes=writes,
+                    name=name, every=every,
+                )
+        return decorate
+
+    def enable_system(self, name, enabled=True) -> None:
+        self.scheduler.set_enabled(name, enabled)
+
+    def disable_system(self, name) -> None:
+        self.enable_system(name, False)
+
+    def step(self, dt=None) -> None:
+        """Run one scheduled pass, then advance the clock on success."""
+        previous_dt = self.dt
+        step_dt = previous_dt if dt is None else dt
+        self.resources["dt"] = step_dt
+        try:
+            self.scheduler.run_step()
+            self.resources["time"] += step_dt
+            self.resources["tick"] += 1
+        finally:
+            self.resources["dt"] = previous_dt
+
+    def run(self, steps, dt=None, callback=None) -> World:
+        """Run up to steps passes; call callback(world) after each completed step."""
+        for _ in range(steps):
+            self.step(dt=dt)
+            if callback is not None and callback(self) is False:
+                break
         return self
 
     def spawn(self, *components, name=None) -> Entity:

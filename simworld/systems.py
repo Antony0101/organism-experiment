@@ -125,20 +125,27 @@ class Scheduler:
     def run_step(self) -> None:
         """Execute eligible systems at the current tick without advancing the world clock."""
         world = self._world
-        for sd in self.ordered():
-            if not sd.enabled:
-                continue
-            # Module installation is introduced later; no modules are disabled before then.
-            module_enabled = getattr(world, "module_enabled", None)
-            if sd.module is not None and module_enabled is not None and not module_enabled(sd.module):
-                continue
-            if sd.every > 1 and world.tick % sd.every != 0:
-                continue
-            if not self.profile:
-                sd.fn(world)
-                continue
-            started = perf_counter()
-            try:
-                sd.fn(world)
-            finally:
-                self.timings[sd.name] = self.timings.get(sd.name, 0.0) + perf_counter() - started
+        self.ordered()
+        stages = [tuple(self._sorted[stage]) for stage in self.stages]
+        for systems in stages:
+            for sd in systems:
+                if not sd.enabled:
+                    continue
+                # Module installation is introduced later; no modules are disabled before then.
+                module_enabled = getattr(world, "module_enabled", None)
+                if sd.module is not None and module_enabled is not None and not module_enabled(sd.module):
+                    continue
+                if sd.every > 1 and world.tick % sd.every != 0:
+                    continue
+                if not self.profile:
+                    sd.fn(world)
+                    world.commands.apply(world)
+                    continue
+                started = perf_counter()
+                try:
+                    sd.fn(world)
+                    world.commands.apply(world)
+                finally:
+                    self.timings[sd.name] = self.timings.get(sd.name, 0.0) + perf_counter() - started
+            # Phase 3 will dispatch stage events before this boundary flush.
+            world.commands.apply(world)
