@@ -9,8 +9,9 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–025 are complete and **Phase 0's scaffold gate has passed**: editable
-installation, scaffold tests and imports outside the checkout were verified.
+Steps 001–026 are complete and **the Phase 0 and Phase 1 gates have passed**.
+Editable installation, headless ECS behavior and the accumulated suite are verified.
+The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
 `Appearance` are available through `simworld`; `Parent` and registry metadata
 live in their respective modules. Entity allocation and stale-id checks live in
@@ -36,9 +37,9 @@ are skipped and counted in `world.commands.skipped`; setting
 `world.commands.strict = True` raises instead. Other exceptions propagate.
 The scheduler flushes commands after each system and at stage boundaries.
 A step-level dt override is temporary, and a run callback returning False stops it.
-Phase 1 is in progress.
-**Step 026 — Verify the ECS milestone** in
-[Phase 1](plans/01-ecs.md) is next.
+Phase 2 is ready to begin.
+**Step 027 — Allocate typed grid layers** in
+[Phase 2](plans/02-grid.md) is next.
 
 Built-in modules and the editor arrive later.
 The declared `simworld-editor` entry point targets a future module and cannot
@@ -51,8 +52,9 @@ import simworld
 
 ## Development setup
 
-Python 3.10 or newer is required. Run these commands from the repository root
-using a Python installation with `venv`/`ensurepip` support. Package installation
+The package declares Python 3.10 or newer. The pinned development environment
+below requires Python 3.12 or newer because NumPy 2.5.4 requires it. Run these
+commands from the repository root using Python with `venv`/`ensurepip` support. Package installation
 requires access to a package index or the corresponding local packages.
 
 For a new checkout without `.venv`, create the environment and install the recorded
@@ -146,4 +148,5 @@ Step 017 adds component access and mutation; Step 018 adds queries and counts.
 Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
 Steps 021–022 add system registration/context and stage scheduling. Steps 023–024
 add deferred structural commands and stale-target handling. Step 025 connects
-World run loops and automatic command flushing. Phase 1 verification is next.
+World run loops and automatic command flushing. Step 026 verifies the Phase 1
+milestone and documents its contracts. Typed grid layers are next.

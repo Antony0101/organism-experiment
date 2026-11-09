@@ -315,6 +315,9 @@ class World:
     def get(self, e: Entity, comp):
         """Return a component, distinguishing a missing component from a stale id."""
         name = component_name(comp)
+        # Numeric dictionary keys can compare equal even when their types differ.
+        if not isinstance(e, int) or isinstance(e, bool):
+            self._alloc.check(e)
         try:
             return self._stores.get(name, {})[e]
         except (KeyError, TypeError):

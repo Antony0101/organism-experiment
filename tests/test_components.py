@@ -30,6 +30,35 @@ from tests.conftest import clean_components as component_cleanup
 pytestmark = pytest.mark.usefixtures("clean_components")
 
 
+def test_component_subclass_includes_new_fields_and_factories():
+    @component
+    class BaseStats:
+        health: int = 10
+
+    @component
+    class MovingStats(BaseStats):
+        speed: float = prop(2.0, min=0)
+        history: list = prop(default_factory=list)
+
+    first = MovingStats(health=8, speed=3.0)
+    second = MovingStats()
+    first.history.append(1)
+    assert second.history == []
+    assert [field.name for field in COMPONENTS.get("MovingStats").fields] == [
+        "health", "speed", "history",
+    ]
+    assert COMPONENTS.get("MovingStats").fields[1].min == 0
+    assert component_to_dict(first) == {"health": 8, "speed": 3.0, "history": [1]}
+    assert component_from_dict("MovingStats", component_to_dict(first)) == first
+    assert [field.name for field in COMPONENTS.get("BaseStats").fields] == ["health"]
+
+
+@pytest.mark.parametrize("value", ["Position", simworld.Position])
+def test_component_serialization_rejects_names_and_classes(value):
+    with pytest.raises(NotAComponentError, match="component instance"):
+        component_to_dict(value)
+
+
 def test_component_builds_slotted_data_and_field_metadata():
     @component(category="testing")
     class Step010Stats:

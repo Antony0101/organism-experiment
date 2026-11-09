@@ -153,7 +153,8 @@ def component(cls=None, *, name: str | None = None, category: str = "general"):
                 "Pass @component(name=...) to choose a distinct name."
             )
 
-        if not dc.is_dataclass(cls):
+        # Inherited dataclass metadata does not include this subclass's new fields.
+        if not dc.is_dataclass(cls) or "__dataclass_fields__" not in cls.__dict__:
             cls = dc.dataclass(cls, slots=True)
 
         reflected = []
@@ -227,7 +228,7 @@ def _json_value(value):
 def component_to_dict(comp) -> dict:
     """Convert a registered component instance to JSON-compatible field data."""
     name = component_name(comp)
-    if isinstance(comp, type):
+    if isinstance(comp, (str, type)):
         raise NotAComponentError("component_to_dict() expects a component instance.")
     check = getattr(comp, "_check_serializable", None)
     if check is not None:

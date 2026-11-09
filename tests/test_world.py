@@ -15,6 +15,20 @@ from simworld.errors import (
 )
 
 
+@pytest.mark.parametrize("convert", [float, complex, np.int64])
+def test_get_rejects_non_integer_ids_even_when_they_match_a_live_key(convert):
+    world = World()
+    entity = world.spawn(Position(1, 2))
+    invalid = convert(entity)
+    assert invalid == entity
+    assert not world.is_alive(invalid)
+    assert world.try_get(invalid, Position) is None
+    assert not world.has(invalid, Position)
+    with pytest.raises(StaleEntityError, match="not an entity id"):
+        world.get(invalid, Position)
+    assert world.get(entity, Position) == Position(1, 2)
+
+
 def test_default_world_settings_and_initial_resources():
     world = World()
     assert dc.asdict(world.settings) == {

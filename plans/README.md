@@ -2,11 +2,11 @@
 
 This plan turns [BLUEPRINT.md](../BLUEPRINT.md) into **194 sequential steps across 11 phases**. Each step is a small coding session with a concrete change, a verification target and source sections. The intended rhythm is read, test, implement, inspect, record, then stop at the step boundary.
 
-**Current status: Steps 001–025 complete (25/194); Phase 0's gate passed. Step 026 is next.** Engine errors, registries, components, entity allocation/lifecycle, World state, queries/counts, naming, prefabs, system registration/context, stage scheduling and deferred structural commands with stale-target handling, and World stepping/run loops are implemented; Phase 1 remains in progress. Exact installed versions are in [requirements-dev.txt](../requirements-dev.txt). See [plans/progress.md](progress.md) for evidence and limitations.
+**Current status: Steps 001–026 complete (26/194); Phase 0 and Phase 1 gates passed. Step 027 is next.** Engine errors, registries, components, entity allocation/lifecycle, World state, queries/counts, naming, prefabs, system registration/context, stage scheduling and deferred structural commands with stale-target handling, and World stepping/run loops are implemented; Phase 2 is unstarted. The [ECS contracts](../docs/ecs-contracts.md) record the frozen formats and later integration points. Exact installed versions are in [requirements-dev.txt](../requirements-dev.txt). See [plans/progress.md](progress.md) for evidence and limitations.
 
 ## Start here
 
-Read this file, the [progress log](progress.md), then open [Phase 1](01-ecs.md) and continue with Step 026 when requested. Use the global step number when asking for work, for example: “Implement Step 026 only.” Every step depends on its predecessor, and every phase depends on the preceding phase's exit gate. This deliberately favors a single reviewable sequence over parallel work.
+Read this file, the [progress log](progress.md), then open [Phase 2](02-grid.md) and continue with Step 027 when requested. Use the global step number when asking for work, for example: “Implement Step 027 only.” Every step depends on its predecessor, and every phase depends on the preceding phase's exit gate. This deliberately favors a single reviewable sequence over parallel work.
 
 | Blueprint phase | Plan | Steps | Count |
 | --- | --- | --- | ---: |

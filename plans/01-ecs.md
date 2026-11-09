@@ -4,9 +4,9 @@ Steps **008–026** (19 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§3.4
 
 [Execution rules and index](README.md). Complete the preceding phase gate before starting this file. Within this file, each step depends on the preceding numbered step; Step 001 has no predecessor.
 
-**Phase exit gate:** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite.
+**Phase exit gate: passed on 2026-11-05.** Entity lifecycle, deterministic queries, deferred commands and scheduler contracts pass the complete accumulated suite (207 tests). See [ECS contracts](../docs/ecs-contracts.md) and [verification evidence](progress.md).
 
-Steps 008–025 are complete; Step 026 is unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
+Steps 008–026 are complete. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review. See [progress and evidence](progress.md).
 
 ### Step 008 — Build actionable engine errors
 
@@ -118,7 +118,7 @@ Steps 008–025 are complete; Step 026 is unstarted. Check a box only after impl
 
 ### Step 026 — Verify the ECS milestone
 
-- [ ] **Change:** Run test_ecs.py, test_commands.py and the complete suite; document the frozen ids, component data format and stage order.
+- [x] **Change:** Run test_ecs.py, test_commands.py and the complete suite; document the frozen ids, component data format and stage order.
 - **Verify:** All accumulated tests pass; no layers/actions/editor code is required; later service integration points are documented.
 - **Blueprint:** §8 Phase 1.
 

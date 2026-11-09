@@ -1,9 +1,11 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–025 complete**, as of
-**4 November 2026**. The step number matters: the package version alone does not
-identify which parts of the blueprint have been built.
+package version **0.1.0**, with implementation **Steps 001–026 complete**, as of
+**5 November 2026**. The step number matters: the package version alone does not
+identify which parts of the blueprint have been built. Phase 1 has passed its
+verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
+and integration requirements for later phases.
 
 You can create entities, attach data, query that data, define reusable templates,
 register systems, schedule their execution, and queue structural changes. The
@@ -35,9 +37,10 @@ Python process with this package installed.
 
 ## Setup and a complete walkthrough
 
-The engine requires Python 3.10 or newer and NumPy. The current recorded development
-environment uses Python 3.12.3, NumPy 2.5.4, and pytest 9.2.0. From the repository
-root, a new environment can be prepared with:
+The package declares Python 3.10 or newer and NumPy. The pinned development
+requirements require Python 3.12 or newer because NumPy 2.5.4 requires it. The
+recorded environment uses Python 3.12.3, NumPy 2.5.4, and pytest 9.2.0. Using a
+Python 3.12+ interpreter, prepare a new environment from the repository root with:
 
 ```bash
 python3 -m venv .venv
@@ -162,9 +165,12 @@ registered name to the class as `__component_name__` and returns the class.
 
 A dataclass supplies generated methods such as initialization, representation,
 and equality. Slots give its instances declared storage locations and normally
-prevent adding arbitrary new attributes. If the supplied class is already a
-dataclass, the decorator preserves it rather than rebuilding it; existing frozen
-or non-slotted behavior stays in effect.
+prevent adding arbitrary new attributes. If the supplied class has its own dataclass
+definition, the decorator preserves it; existing frozen or non-slotted behavior
+stays in effect. A subclass that only inherits dataclass metadata is processed
+so its new fields, defaults and factories are included. Frozen inheritance must
+still follow Python dataclass rules; explicitly decorate such subclasses with
+the appropriate options before applying @component.
 
 Both `@component` and `@component(name="CustomName", category="example")` work.
 A name already owned by a different logical class raises DuplicateNameError.
@@ -262,7 +268,8 @@ assert isinstance(restored.color, tuple)
 assert component_from_dict("Appearance").size == 1
 ```
 
-`component_to_dict()` returns field data, without a component-name wrapper. It
+`component_to_dict()` requires a component instance; registered names and classes
+are rejected with NotAComponentError. It returns field data without a component-name wrapper. It
 omits fields marked `serialize=False`, converts tuples to lists, converts NumPy
 scalars to native values, converts dictionary keys to strings, and recursively
 handles supported containers and dataclass instances. It calls a component's
@@ -444,7 +451,9 @@ all requested type names before removing anything.
 
 Get distinguishes a live entity missing a component (MissingComponentError) from
 an invalid or stale id (StaleEntityError). It resolves the component first, so an
-unknown component name can fail before entity validation. Try_get and has check
+unknown component name can fail before entity validation. Non-integer keys are
+rejected before the store lookup, even if they compare equal to a live id.
+Try_get and has check
 liveness first: dead ids return None or False even if the requested component is
 unknown. On live entities, unknown component names still raise errors.
 
@@ -1083,21 +1092,21 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations through Step 025. The following
+The implementation contains the ECS foundations through Step 026. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
 | --- | --- | --- |
 | Command errors | Stale operations are skipped and counted by default; strict mode raises; other errors propagate | Implemented in Step 024 |
 | Scheduler integration | World stepping/running, per-system and stage-boundary command flushing, clock advancement | Implemented in Step 025; event dispatch remains Phase 3 |
-| ECS milestone | Individual behavior is covered by the accumulated suite | Step 026 performs the phase gate |
+| ECS milestone | Phase 1 gate passed; contracts documented | Step 026 complete; Phase 2 starts at Step 027 |
 | Layers, terrain, spatial queries, rendering | Not implemented | Phase 2 |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |
 | Full world persistence, plugins, configuration loading | Not implemented; component and allocator conversion already exist | Phase 5 |
 | Editor and GUI | Package placeholders only | Later editor phases |
 
-For exact remaining tasks, use [Phase 1](../plans/01-ecs.md) and the
+For exact remaining tasks, use [Phase 2](../plans/02-grid.md) and the
 [plan index](../plans/README.md). [BLUEPRINT.md](../BLUEPRINT.md) describes the
 intended complete engine; [progress.md](../plans/progress.md) records what has
 actually been implemented and checked in this repository.
