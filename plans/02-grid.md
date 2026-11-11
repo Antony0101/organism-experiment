@@ -6,23 +6,23 @@ Steps **027–043** (17 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§5.5
 
 **Phase exit gate:** Grid operations, mass conservation, terrain semantics, spatial comparisons and valid PNG output pass.
 
-All steps are planned and unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 027–029 are complete; Steps 030–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
 
 ### Step 027 — Allocate typed grid layers
 
-- [ ] **Change:** Add Layer metadata and LayerStore with scalar and trailing vector shapes in layers.py.
+- [x] **Change:** Add Layer metadata and LayerStore with scalar and trailing vector shapes in layers.py.
 - **Verify:** Arrays have shape (height, width, *shape), requested dtype/default and helpful UnknownLayerError behavior.
 - **Blueprint:** §5.5.
 
 ### Step 028 — Read and write world cells
 
-- [ ] **Change:** Implement bounds, coordinate flooring, tuple/position access, get/set and raw NumPy indexing.
+- [x] **Change:** Implement bounds, coordinate flooring, tuple/position access, get/set and raw NumPy indexing.
 - **Verify:** Asymmetric-grid tests distinguish (x,y) from [y,x]; defaults handle out-of-bounds reads; float-only clamping is exact.
 - **Blueprint:** §5.5.
 
 ### Step 029 — Implement bounded layer arithmetic
 
-- [ ] **Change:** Add add/take/fill/clamp/total/mean and reject negative take amounts.
+- [x] **Change:** Add add/take/fill/clamp/total/mean and reject negative take amounts.
 - **Verify:** Taking ten from a cell holding two returns two, then zero; min floors and actual applied deltas are respected.
 - **Blueprint:** §5.5, G4.
 

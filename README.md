@@ -9,7 +9,7 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–026 are complete and **the Phase 0 and Phase 1 gates have passed**.
+Steps 001–029 are complete and **the Phase 0 and Phase 1 gates have passed**.
 Editable installation, headless ECS behavior and the accumulated suite are verified.
 The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
@@ -37,8 +37,13 @@ are skipped and counted in `world.commands.skipped`; setting
 `world.commands.strict = True` raises instead. Other exceptions propagate.
 The scheduler flushes commands after each system and at stage boundaries.
 A step-level dt override is temporary, and a run callback returning False stops it.
-Phase 2 is ready to begin.
-**Step 027 — Allocate typed grid layers** in
+`simworld.layers` provides standalone `Layer` and `LayerStore` allocation with
+scalar/vector cell shapes, dtype/default metadata and useful missing-name errors.
+Layers support floored coordinate get/set, out-of-bounds read defaults, float-only
+write clamping and raw NumPy-style bracket indexing. Scalar `add`/`take` report
+actual stored changes, and `fill`/`clamp`/`total`/`mean` operate across the grid.
+World grid integration remains Step 034. Phase 2 is in progress.
+**Step 030 — Sample and inspect neighborhoods** in
 [Phase 2](plans/02-grid.md) is next.
 
 Built-in modules and the editor arrive later.
@@ -149,4 +154,6 @@ Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
 Steps 021–022 add system registration/context and stage scheduling. Steps 023–024
 add deferred structural commands and stale-target handling. Step 025 connects
 World run loops and automatic command flushing. Step 026 verifies the Phase 1
-milestone and documents its contracts. Typed grid layers are next.
+milestone and documents its contracts. Step 027 adds typed grid allocation;
+Steps 028–029 add cell access and bounded arithmetic; sampling and neighborhoods
+are next.

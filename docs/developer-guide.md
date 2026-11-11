@@ -1,8 +1,8 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–026 complete**, as of
-**5 November 2026**. The step number matters: the package version alone does not
+package version **0.1.0**, with implementation **Steps 001–029 complete**, as of
+**11 November 2026**. The step number matters: the package version alone does not
 identify which parts of the blueprint have been built. Phase 1 has passed its
 verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
 and integration requirements for later phases.
@@ -23,6 +23,7 @@ Python process with this package installed.
 - [Components and their metadata](#components-and-their-metadata)
 - [Registries and component serialization](#registries-and-component-serialization)
 - [Entity identity and allocation](#entity-identity-and-allocation)
+- [Typed grid allocation](#typed-grid-allocation)
 - [World state and ownership](#world-state-and-ownership)
 - [Entity and component operations](#entity-and-component-operations)
 - [Queries and iteration](#queries-and-iteration)
@@ -127,6 +128,7 @@ its type available everywhere while spawning an entity affects one world.
 | [simworld/__init__.py](../simworld/__init__.py) | Convenient public imports |
 | [simworld/errors.py](../simworld/errors.py) | Exception types and helpful lookup diagnostics |
 | [simworld/registry.py](../simworld/registry.py) | Named registries, component decorators, field metadata, component serialization, active registration contexts |
+| [simworld/layers.py](../simworld/layers.py) | Typed NumPy grid allocation, layer metadata and named layer storage |
 | [simworld/components.py](../simworld/components.py) | Position, Appearance, and Parent data types |
 | [simworld/ecs.py](../simworld/ecs.py) | Entity ids, slot allocation, allocator undo/serialization, command buffer |
 | [simworld/world.py](../simworld/world.py) | World state and entity, component, name, prefab, and system registration APIs |
@@ -144,7 +146,7 @@ prop, COMPONENTS, system, DEFAULT_STAGES, entity id decoding helpers, and the
 engine exceptions. Import Parent from `simworld.components`; import
 EntityAllocator and CommandBuffer from `simworld.ecs`; import SystemDef and
 Scheduler from `simworld.systems`. Serialization and context helpers are available
-from `simworld.registry`.
+from `simworld.registry`. Import Layer and LayerStore from `simworld.layers`.
 
 ## Components and their metadata
 
@@ -364,6 +366,162 @@ restores those lists without sharing them with the input. It assumes valid
 allocator data; it is neither a full world snapshot nor an untrusted-data schema
 validator.
 
+## Typed grid allocation
+
+A layer stores one grid of values over a rectangular area. Components describe
+individual entities; a layer describes cells, such as a numeric value at every
+position. Layer and LayerStore work directly through `simworld.layers`, including coordinate
+reads/writes and raw NumPy indexing.
+World integration is scheduled for Step 034; World does not yet have layers or
+define_layer/define_field methods.
+
+```python
+import numpy as np
+from simworld.layers import Layer, LayerStore
+
+heat = Layer("heat", width=5, height=2, dtype=np.float32, default=1.5,
+             min=0, max=10, color=(255, 80, 20), kind="field")
+assert heat.data.shape == (2, 5)
+assert heat.data.dtype == np.dtype(np.float32)
+assert heat.is_float
+assert heat.data[1, 4] == 1.5  # Row y=1, column x=4.
+
+velocity = Layer("velocity", 5, 2, dtype=np.float32, default=(1, -1), shape=(2,))
+assert velocity.data.shape == (2, 5, 2)
+np.testing.assert_array_equal(velocity.data[0, 0], [1, -1])
+layers = LayerStore(heat=heat, velocity=velocity)
+assert layers["heat"] is heat
+```
+
+A scalar layer has data shape `(height, width)`. The shape option gives extra
+cell dimensions: shape=(2,) stores a pair per cell, while shape=(2, 3) gives
+array shape `(height, width, 2, 3)`. NumPy broadcasts the default into all cells
+and applies the requested dtype through np.full. Invalid shapes, dtypes or
+incompatible defaults raise NumPy's normal errors. Array allocation is independent
+between layers, and numeric cells occupy separate locations in each array.
+
+Metadata includes name, width, height, dtype, default, shape, min/max, decay_rate,
+diffusion_rate, color, tooltip, kind and props. The constructor uses decay and
+diffusion arguments to populate the corresponding rate attributes. Dtype is
+normalized to np.dtype; shape and a supplied color are stored as tuples. Props
+receives a shallow dictionary copy, so its top-level keys are independent while
+nested mutable values may remain shared. The default attribute retains the
+supplied value; numeric grid data is allocated separately. is_float tests whether
+the dtype is a real floating-point type; integer and boolean layers return False.
+
+Initial allocation does not clamp or evolve the array. Cell set now uses the
+configured min/max on float layers, as do add, fill and explicit clamp.
+Bounded arithmetic is implemented; diffusion and decay arrive in Step 031.
+
+### Reading and writing cells
+
+Coordinate APIs take `(x, y)` and floor each coordinate to a cell index. Cell
+(i, j) covers positions `[i, i+1)` by `[j, j+1)`. A slightly negative coordinate
+therefore lies outside the grid; it does not truncate to zero or wrap around.
+`in_bounds(x, y)` tests the half-open world bounds, from zero up to width/height.
+
+```python
+from simworld import OutOfBoundsError, Position
+from simworld.layers import Layer
+
+food = Layer("food", width=5, height=2, min=0, max=10)
+food.set(4.8, 1.3, 20)          # Floors to x=4, y=1, then clamps to 10.
+assert food.get(4, 1) == 10
+food.set(Position(2.5, 0.1), 3)
+assert food.get((2, 0)) == 3
+assert food.in_bounds(4.999, 1.999)
+assert not food.in_bounds(-0.01, 0)
+assert food.get(-0.01, 0, default=None) is None
+try:
+    food.get(5, 0)
+except OutOfBoundsError:
+    pass
+else:
+    raise AssertionError("The right edge is outside the grid.")
+
+food[1, 4] = 20               # Raw [y, x] assignment bypasses clamping.
+assert food.get(4, 1) == 20
+assert food[-1, -1] == 20     # NumPy negative indexing still works here.
+```
+
+Get accepts separate coordinates, a two-item pair, or an object with x/y
+attributes. Set accepts `set(x, y, value)`, `set(pair, value)` or
+`set(position, value)`. It returns None. Out-of-bounds reads and writes raise
+OutOfBoundsError with the layer name, cell indices and dimensions. Passing an
+explicit keyword default to get returns that exact object outside the bounds,
+including None or zero. It does not substitute for malformed or non-finite
+coordinates: coordinate unpacking and flooring retain their normal Python errors.
+
+Scalar get returns the stored value through NumPy's item operation, normally a
+native Python number or boolean. Vector/matrix get returns the cell array as a
+view; editing it changes the stored data. Float set clamps each value to any
+configured lower/upper limit before assignment. Integer and boolean layers use
+NumPy assignment conversion without range clamping. Neither get nor allocation
+repairs values already written outside limits through raw indexing.
+
+Brackets delegate directly to data: `layer[y, x]`, slices, trailing cell dimensions,
+views, broadcasting and negative indices follow NumPy semantics. Bracket access
+performs no coordinate flooring or layer-level bounds/clamp policy; invalid array
+indices raise NumPy's IndexError. World-facing coordinates and raw array indexing
+therefore have distinct conventions.
+
+### Bounded arithmetic and grid summaries
+
+Add and take operate on scalar quantities and accept the same coordinate forms
+as set: `(x, y, amount)`, `(pair, amount)` or `(position, amount)`. They return
+Python floats describing the actual stored change, including dtype conversion
+and rounding. Vector/matrix cells raise SimWorldError before mutation; their
+individual values can be changed through set or raw indexing.
+
+Add returns a signed delta. A negative amount subtracts; a positive amount adds.
+Float-layer min/max limits apply through set, so an addition can be only partly
+applied. Integer and boolean layers retain NumPy conversion without those float
+limits. A change too small for the storage dtype can produce a zero delta.
+
+Take rejects negative requests with SimWorldError. It removes at most what is
+available above min, or above zero when min is None. Its return value describes
+what the caller actually received, rather than what it requested. Integer cells
+remove whole units: fractional requests and available amounts are rounded down
+to avoid exceeding the request or crossing the floor. Floating-point results
+reflect the stored dtype's precision and should be compared with a tolerance.
+
+```python
+from simworld.layers import Layer
+
+food = Layer("food", 2, 1, default=2, min=0, max=5)
+assert food.take(0, 0, 10) == 2.0
+assert food.take(0, 0, 10) == 0.0
+assert food.add((1, 0), 10) == 3.0  # The other cell grows from 2 to its cap of 5.
+assert food.add(1, 0, -10) == -5.0
+assert food.total() == 0.0
+
+food.fill(3)
+assert food.total() == 6.0 and food.mean() == 3.0
+food[0, 0] = 9                   # Raw writes may exceed limits.
+food.clamp()
+assert food.get(0, 0) == 5
+assert food.total() == 8.0
+```
+
+Take enforces only its removal floor. It does not repair a cell already below
+that floor, and it does not apply max to a raw value above the cap. That avoids
+creating resources or removing more than requested while correcting unrelated
+state. Use clamp explicitly to repair out-of-range float data.
+
+Fill broadcasts its value into the existing array, then calls clamp. Clamp applies
+configured float min/max limits in place, including vector/matrix elements;
+it does nothing when there are no limits or the dtype is not floating-point.
+Both preserve the array object and existing views, and return None. Fill does not
+change default metadata. Total and mean reduce every array dimension, including
+trailing cell dimensions, and return Python floats. They use NumPy's normal
+reduction behavior, including overflow rules and empty-array warnings/results.
+
+LayerStore preserves ordinary dictionary insertion, lookup and replacement
+behavior. A missing bracket lookup raises UnknownLayerError with known names and
+close matches, without inserting the missing name. Like a normal dict, get returns
+None or its supplied fallback for an absent name. It does not validate inserted
+values or allocate layers automatically.
+
 ## World state and ownership
 
 World is the object that connects the engine's services. Its constructor validates
@@ -372,7 +530,7 @@ stores and name maps, and creates its scheduler and command buffer.
 
 | Setting | Default | Current use |
 | --- | --- | --- |
-| width, height | 64, 64 | Retained dimensions; there is no grid storage yet |
+| width, height | 64, 64 | Retained World dimensions; standalone Layer grids are not yet attached to World |
 | seed | 0 | Initializes the world's NumPy generator |
 | dt | 1.0 | Initial simulation time increment stored in resources |
 | cell_size | 8.0 | Retained for later spatial/rendering work |
@@ -995,6 +1153,7 @@ Use a focused file when changing one subsystem:
 | [test_ecs.py](../tests/test_ecs.py) | Error behavior, allocation, stale ids, undo, allocator serialization |
 | [test_registry.py](../tests/test_registry.py) | Ordered registration, duplicates, lookup and removal |
 | [test_components.py](../tests/test_components.py) | Component reflection, factories, redefinition and serialization |
+| [test_layers.py](../tests/test_layers.py) | Scalar/vector allocation, dtype/defaults, coordinate access, bounded arithmetic, reductions, raw indexing and missing layer lookups |
 | [test_core_components.py](../tests/test_core_components.py) | Built-in component defaults and metadata |
 | [test_world.py](../tests/test_world.py) | Construction, lifecycle, ownership, queries and naming |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
@@ -1092,7 +1251,7 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations through Step 026. The following
+The implementation contains the ECS foundations and layer allocation, cell access and arithmetic through Step 029. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
@@ -1100,7 +1259,8 @@ boundaries are part of the current API behavior:
 | Command errors | Stale operations are skipped and counted by default; strict mode raises; other errors propagate | Implemented in Step 024 |
 | Scheduler integration | World stepping/running, per-system and stage-boundary command flushing, clock advancement | Implemented in Step 025; event dispatch remains Phase 3 |
 | ECS milestone | Phase 1 gate passed; contracts documented | Step 026 complete; Phase 2 starts at Step 027 |
-| Layers, terrain, spatial queries, rendering | Not implemented | Phase 2 |
+| Layers | Standalone allocation, coordinate access, bounded arithmetic, bulk limits and summaries | Steps 027–029 complete; sampling is Step 030 and World integration is Step 034 |
+| Terrain, spatial queries, rendering | Not implemented | Later Phase 2 steps |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |
 | Full world persistence, plugins, configuration loading | Not implemented; component and allocator conversion already exist | Phase 5 |
