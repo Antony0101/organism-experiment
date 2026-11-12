@@ -6,7 +6,7 @@ Steps **027–043** (17 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§5.5
 
 **Phase exit gate:** Grid operations, mass conservation, terrain semantics, spatial comparisons and valid PNG output pass.
 
-Steps 027–031 are complete; Steps 032–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 027–034 are complete; Steps 035–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
 
 ### Step 027 — Allocate typed grid layers
 
@@ -40,19 +40,19 @@ Steps 027–031 are complete; Steps 032–043 are unstarted. Check a box only af
 
 ### Step 032 — Define terrain identities
 
-- [ ] **Change:** Add Terrain and TerrainRegistry definition/undefinition, RGB validation, id uniqueness and int16 terrain-layer creation.
+- [x] **Change:** Add Terrain and TerrainRegistry definition/undefinition, RGB validation, id uniqueness and int16 terrain-layer creation.
 - **Verify:** Same name/id updates; conflicting ids/names fail; passable terrain requires positive cost; ensure_layer preserves existing data.
 - **Blueprint:** §5.6.
 
 ### Step 033 — Build terrain lookup grids
 
-- [ ] **Change:** Implement cost/passability LUTs, arbitrary property grids, named masks and cached property invalidation.
+- [x] **Change:** Implement cost/passability LUTs, arbitrary property grids, named masks and cached property invalidation.
 - **Verify:** Known and undefined ids follow §5.6; redefining properties clears cached results; at() errors for unknown ids.
 - **Blueprint:** §5.6.
 
 ### Step 034 — Expose World grid APIs
 
-- [ ] **Change:** Add define_layer/define_field, terrain access/mutation and _paths_changed as a cache-invalidation hook for the future finder.
+- [x] **Change:** Add define_layer/define_field, terrain access/mutation and _paths_changed as a cache-invalidation hook for the future finder.
 - **Verify:** Field regrowth metadata validates max/property prerequisites; replacement rules are explicit; terrain API edits call the invalidation hook.
 - **Blueprint:** §§5.6–5.7, 5.12.
 

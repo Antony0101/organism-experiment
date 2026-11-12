@@ -11,11 +11,13 @@ import numpy as np
 
 from .ecs import INDEX_BITS, CommandBuffer, Entity, EntityAllocator
 from .errors import (
-    DuplicateNameError, MissingComponentError, NotAComponentError,
+    ConfigError, DuplicateNameError, MissingComponentError, NotAComponentError,
     SerializationError, SimWorldError, UnknownNameError, UnknownPrefabError,
 )
 from .registry import component_from_dict, component_name, loading_into
+from .layers import Layer, LayerStore
 from .systems import Scheduler, SystemDef, system as system_decorator
+from .terrain import TERRAIN_LAYER, Terrain, TerrainRegistry
 
 
 __all__ = ["World", "WorldSettings"]
@@ -37,7 +39,7 @@ class WorldSettings:
 
 
 class World:
-    """Own configuration, resources, an allocator and ordered component stores."""
+    """Own simulation settings, grid services, entities and scheduled systems."""
 
     def __init__(
         self, width=64, height=64, *, seed=0, dt=1.0, modules=(),
@@ -65,6 +67,8 @@ class World:
             "rng": np.random.default_rng(seed),
             "settings": self.settings,
         }
+        self.layers = LayerStore()
+        self.terrains = TerrainRegistry(self)
         self._alloc = EntityAllocator()
         self._stores: dict[str, dict[Entity, t.Any]] = {}
         self._names: dict[str, Entity] = {}
@@ -74,6 +78,71 @@ class World:
         self.scheduler = Scheduler(self)
         self._systems = self.scheduler.systems
         self._current_module: str | None = None
+
+    def define_layer(
+        self, name, dtype=float, default=0, *, shape=(), min=None, max=None,
+        decay=0.0, diffusion=0.0, color=None, tooltip="", kind="layer",
+        replace=False, **props,
+    ) -> Layer:
+        """Allocate a named grid; replacing an existing name requires opt-in."""
+        if name in self.layers and not replace:
+            raise DuplicateNameError(
+                f"A layer named {name!r} already exists. Pass replace=True to replace it."
+            )
+        layer = Layer(
+            name, self.width, self.height, dtype=dtype, default=default, shape=shape,
+            min=min, max=max, decay=decay, diffusion=diffusion, color=color,
+            tooltip=tooltip, kind=kind, props=props,
+        )
+        self.layers[name] = layer
+        if name == TERRAIN_LAYER:
+            self._paths_changed()
+        return layer
+
+    def define_field(
+        self, name, *, initial=0.0, min=0.0, max=None, decay=0.0, diffusion=0.0,
+        regrow=0.0, regrow_by=None, diffuse_on=None, color=None, tooltip="",
+        replace=False, **props,
+    ) -> Layer:
+        """Define a float field and validate its future regrowth prerequisites."""
+        if regrow and max is None:
+            raise ConfigError(f"Field {name!r} needs max when regrow is nonzero.")
+        if regrow_by is not None and not any(
+            regrow_by in terrain.props for terrain in self.terrains.by_id.values()
+        ):
+            raise ConfigError(
+                f"Field {name!r} regrow_by property {regrow_by!r} is not defined by any terrain."
+            )
+        return self.define_layer(
+            name, dtype=float, default=initial, min=min, max=max, decay=decay,
+            diffusion=diffusion, color=color, tooltip=tooltip, kind="field",
+            replace=replace, regrow=regrow, regrow_by=regrow_by,
+            diffuse_on=diffuse_on, **props,
+        )
+
+    def define_terrain(
+        self, name, id, move_cost=1.0, passable=True, color=(128, 128, 128), **props,
+    ) -> Terrain:
+        """Define terrain metadata without allocating or repainting the grid."""
+        return self.terrains.define(name, id, move_cost, passable, color, **props)
+
+    def terrain_at(self, x, y) -> Terrain:
+        return self.terrains.at(x, y)
+
+    def set_terrain(self, x, y, name) -> None:
+        """Paint one floored cell and notify the path-invalidation hook."""
+        terrain_id = self.terrains.id_of(name)
+        self.terrains.ensure_layer().set(x, y, terrain_id)
+        self._paths_changed()
+
+    def fill_terrain(self, name) -> None:
+        """Paint the whole terrain plane and notify the path-invalidation hook."""
+        terrain_id = self.terrains.id_of(name)
+        self.terrains.ensure_layer().fill(terrain_id)
+        self._paths_changed()
+
+    def _paths_changed(self) -> None:
+        """Terrain-change extension hook; path-cache integration is Step 076."""
 
     def add_system(self, fn_or_SystemDef, **overrides) -> SystemDef:
         """Register a world-owned copy of a definition or function's metadata."""

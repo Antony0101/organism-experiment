@@ -9,7 +9,7 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–031 are complete and **the Phase 0 and Phase 1 gates have passed**.
+Steps 001–034 are complete and **the Phase 0 and Phase 1 gates have passed**.
 Editable installation, headless ECS behavior and the accumulated suite are verified.
 The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
@@ -46,8 +46,15 @@ Layers also provide bilinear `sample`, centered `gradient`, clipped `window` vie
 and row-ordered `neighbours` with optional diagonals. Float layers support
 masked, mass-conserving `diffuse()` and exponential `decay()` in place.
 These evolution methods are called explicitly; World does not yet schedule them.
-World grid integration remains Step 034. Phase 2 is in progress.
-**Step 032 — Define terrain identities** in
+`simworld.terrain` provides validated terrain identities, name/id lookup and lazy
+int16 terrain-layer creation, per-cell cost/passability lookups, numeric property
+grids and named masks. Definitions rebuild lookup tables and clear property caches.
+World owns its `layers` and `terrains`, with `define_layer`/`define_field` for
+allocation and validated regrowth metadata. Layer replacement requires
+`replace=True`. `define_terrain`, `terrain_at`, `set_terrain` and `fill_terrain`
+connect terrain definitions and painting to World, including the change hook
+for later path-cache invalidation. Phase 2 is in progress.
+**Step 035 — Build the spatial hash** in
 [Phase 2](plans/02-grid.md) is next.
 
 Built-in modules and the editor arrive later.
@@ -160,4 +167,5 @@ add deferred structural commands and stale-target handling. Step 025 connects
 World run loops and automatic command flushing. Step 026 verifies the Phase 1
 milestone and documents its contracts. Step 027 adds typed grid allocation;
 Steps 028–030 add cell access, bounded arithmetic, sampling and neighborhoods.
-Step 031 adds diffusion and decay. Terrain identities are next.
+Step 031 adds diffusion and decay; Step 032 adds terrain identities; Step 033 adds
+terrain lookup grids; Step 034 adds World grid APIs. The spatial hash is next.

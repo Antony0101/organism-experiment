@@ -1,7 +1,7 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–031 complete**, as of
+package version **0.1.0**, with implementation **Steps 001–034 complete**, as of
 **12 November 2026**. The step number matters: the package version alone does not
 identify which parts of the blueprint have been built. Phase 1 has passed its
 verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
@@ -24,6 +24,8 @@ Python process with this package installed.
 - [Registries and component serialization](#registries-and-component-serialization)
 - [Entity identity and allocation](#entity-identity-and-allocation)
 - [Typed grid allocation](#typed-grid-allocation)
+- [Terrain identities](#terrain-identities)
+- [World grid APIs](#world-grid-apis)
 - [World state and ownership](#world-state-and-ownership)
 - [Entity and component operations](#entity-and-component-operations)
 - [Queries and iteration](#queries-and-iteration)
@@ -128,10 +130,11 @@ its type available everywhere while spawning an entity affects one world.
 | [simworld/__init__.py](../simworld/__init__.py) | Convenient public imports |
 | [simworld/errors.py](../simworld/errors.py) | Exception types and helpful lookup diagnostics |
 | [simworld/registry.py](../simworld/registry.py) | Named registries, component decorators, field metadata, component serialization, active registration contexts |
+| [simworld/terrain.py](../simworld/terrain.py) | Terrain records, validated registration, lazy grid creation and per-cell cost/passability/property lookup tables |
 | [simworld/layers.py](../simworld/layers.py) | Typed NumPy grid allocation, layer metadata and named layer storage |
 | [simworld/components.py](../simworld/components.py) | Position, Appearance, and Parent data types |
 | [simworld/ecs.py](../simworld/ecs.py) | Entity ids, slot allocation, allocator undo/serialization, command buffer |
-| [simworld/world.py](../simworld/world.py) | World state and entity, component, name, prefab, and system registration APIs |
+| [simworld/world.py](../simworld/world.py) | World state and grid, entity, component, name, prefab, and system registration APIs |
 | [simworld/systems.py](../simworld/systems.py) | System metadata, decorator, and scheduler |
 | [tests](../tests) | Executable behavior contracts |
 | [plans](../plans/README.md) | Sequential implementation plan and progress evidence |
@@ -372,8 +375,8 @@ A layer stores one grid of values over a rectangular area. Components describe
 individual entities; a layer describes cells, such as a numeric value at every
 position. Layer and LayerStore work directly through `simworld.layers`, including coordinate
 reads/writes and raw NumPy indexing.
-World integration is scheduled for Step 034; World does not yet have layers or
-define_layer/define_field methods.
+World owns a LayerStore and provides define_layer/define_field to allocate grids
+with its dimensions; the World grid APIs section explains those convenience methods.
 
 ```python
 import numpy as np
@@ -639,15 +642,261 @@ close matches, without inserting the missing name. Like a normal dict, get retur
 None or its supplied fallback for an absent name. It does not validate inserted
 values or allocate layers automatically.
 
+## Terrain identities
+
+A terrain definition gives meaning to an integer stored in a terrain cell. For
+example, id 1 might mean ground while id 5 means mud. Each Terrain record holds
+name, id, move_cost (default 1.0), passable (default True), color (default gray
+128, 128, 128), and an independent props dictionary. Custom properties such as
+fertility belong in props. This metadata does not execute movement yet; later
+movement logic divides speed by move_cost, so cost 2 means half the speed.
+
+Import Terrain, TerrainRegistry and TERRAIN_LAYER from `simworld.terrain`.
+TERRAIN_LAYER is the string "terrain". The registry keeps matching by_name and
+by_id dictionaries, supports get by name or integer id, and returns names sorted
+by id. Definitions are local to each registry rather than process-global.
+
+Each World owns its terrain registry as world.terrains. TerrainRegistry can also
+be used independently with an owner supplying width, height and a layers mapping.
+A small owner object can exercise the registry directly:
+
+```python
+from types import SimpleNamespace
+import numpy as np
+from simworld.layers import LayerStore
+from simworld.terrain import TERRAIN_LAYER, TerrainRegistry
+
+owner = SimpleNamespace(width=4, height=3, layers=LayerStore())
+terrains = TerrainRegistry(owner)
+terrains.define("mud", 5, move_cost=2.5, color=(120, 90, 55), fertility=1.4)
+terrains.define("ground", 1)
+assert terrains.names() == ["ground", "mud"]
+assert terrains.get("mud") is terrains.get(5)
+assert terrains.id_of("ground") == 1
+assert terrains.layer is None
+
+layer = terrains.ensure_layer()
+assert owner.layers[TERRAIN_LAYER] is layer
+assert layer.kind == "terrain" and layer.data.dtype == np.dtype("int16")
+np.testing.assert_array_equal(layer.data, np.ones((3, 4), dtype=np.int16))
+layer.set(2, 1, 5)
+terrains.define("mud", 5, move_cost=3, fertility=0.8)
+assert terrains.ensure_layer() is layer and layer.get(2, 1) == 5
+assert terrains.get("mud").props == {"fertility": 0.8}
+```
+
+Define validates before publishing either map. Names must be strings; ids must
+be integers from 0 through 32767, fitting the signed int16 grid. NumPy integer
+ids are normalized to Python ints; booleans and fractional ids are rejected.
+Colors are three integer channels from 0 through 255, normalized to a tuple.
+Movement costs must be finite, and passable terrains require a strictly positive
+cost. A blocked terrain may have zero or negative finite cost because it cannot
+be traversed. Invalid ids/colors/costs raise SimWorldError.
+
+Reusing a name with a different id, or an id belonging to another name, raises
+DuplicateNameError. Reusing the same name/id replaces its Terrain record in both
+maps, including replacing the entire props dictionary. Existing references to the
+old record retain their previous values. Missing lookups raise UnknownTerrainError
+with known names and suggestions. Use define/undefine for registry mutations so
+both maps stay synchronized.
+
+`undefine(name)` removes both mappings and returns the removed record. It does
+not repaint cells containing that id. Definitions alone never create a layer;
+ensure_layer lazily creates a scalar int16 Layer of the owner's dimensions,
+with kind="terrain" and initial/default id equal to the smallest defined id,
+or zero when no definitions exist. The layer property returns None before
+creation. Once a layer exists, ensure_layer returns it without replacing its data
+or metadata, even after definitions change or disappear.
+
+Terrain.to_dict produces the fields name, id, move_cost, passable, color and props.
+Color is a list in that dictionary, matching the planned world-save format; props
+and nested mutable metadata are copied independently. Constructing a Terrain
+dataclass directly does not validate it; define is the registry's validation
+boundary. Property values still need suitable types when later JSON persistence
+is used.
+
+The registry can now translate the ids in those cells into useful values:
+
+| Method | Result |
+| --- | --- |
+| `at(x, y)` | The Terrain record for the cell |
+| `move_cost_at(x, y)` | A Python float movement cost |
+| `passable_at(x, y)` | A Python bool |
+| `move_cost_grid()` | A float array of costs for all cells |
+| `passable_grid()` | A boolean array of passability for all cells |
+| `prop_grid(prop, default=0.0)` | A float array of a numeric custom property |
+| `mask(names)` | A boolean array selecting a name or iterable of names |
+
+These methods call ensure_layer, so reading can create the terrain plane if it
+does not yet exist. Point lookups use Layer.get: coordinates are floored, the
+arguments are `(x, y)`, and out-of-bounds coordinates raise OutOfBoundsError.
+Returned grids are indexed `[y, x]` and are fresh arrays; editing a result does
+not edit terrain cells or registry metadata.
+
+A lookup table (LUT) is a short array whose index is a terrain id. If mud has id
+3 and cost 2.5, move_cost_lut[3] holds 2.5. Gathering those entries for the terrain
+plane converts every id into its cost without a Python loop over cells. The
+registry exposes move_cost_lut and passable_lut, plus internal list equivalents
+_mc and _pass. Tables extend through the largest defined id, with at least one
+entry for an empty registry. Gaps use cost 1 and passability True.
+
+Undefined ids can remain in cells after undefine. At raises UnknownTerrainError
+for them because no record exists. Cost and passability lookups instead use 1.0
+and True, including for ids beyond the tables. Negative ids written through raw
+array access receive the same fallback rather than wrapping to the last table
+entry. Property grids use their supplied default for undefined ids and for
+defined terrains lacking that property. Named masks raise UnknownTerrainError
+for unknown requested names; an empty selection produces all False.
+
+```python
+from types import SimpleNamespace
+import numpy as np
+from simworld.layers import LayerStore
+from simworld.terrain import TerrainRegistry
+from simworld.errors import UnknownTerrainError
+
+owner = SimpleNamespace(width=4, height=1, layers=LayerStore())
+terrains = TerrainRegistry(owner)
+terrains.define("ground", 1, fertility=0.5)
+terrains.define("mud", 3, move_cost=2.5, fertility=1.5)
+terrains.define("rock", 5, move_cost=0, passable=False)
+terrains.ensure_layer().data[:] = [[1, 3, 5, 99]]
+
+np.testing.assert_array_equal(terrains.move_cost_grid(), [[1, 2.5, 0, 1]])
+np.testing.assert_array_equal(terrains.passable_grid(), [[True, True, False, True]])
+np.testing.assert_array_equal(terrains.prop_grid("fertility"), [[0.5, 1.5, 0, 0]])
+np.testing.assert_array_equal(terrains.mask(["ground", "mud"]), [[True, True, False, False]])
+assert terrains.at(1.8, 0.2).name == "mud"
+
+terrains.define("mud", 3, move_cost=3, fertility=2)
+assert terrains.prop_grid("fertility")[0, 1] == 2
+terrains.undefine("mud")
+assert terrains.move_cost_at(1, 0) == 1.0
+try:
+    terrains.at(1, 0)
+except UnknownTerrainError:
+    pass
+else:
+    raise AssertionError("Removed terrain must have no record")
+```
+
+Prop_grid caches a property LUT per `(property, default)`, rather than caching
+the entire cell grid. Each call gathers from current cell ids, so direct cell
+edits and layer replacement appear on the next call. It converts property
+values to floats; nonnumeric metadata, such as char="#", can still be stored
+but cannot be requested as a numeric grid. Conversion failure does not cache a
+partially built table.
+
+Every successful define or undefine calls _rebuild. This rebuilds cost/passability
+tables, clears all property LUTs and then calls the owner's _paths_changed hook
+if present. Failed definition validation, identity conflicts and missing-name
+removal leave tables and caches intact and send no notification. Use define to
+change metadata: directly mutating records, props or exposed maps/tables bypasses
+this refresh. The underscore members are implementation details.
+
+World supplies _paths_changed and the terrain mutation wrappers described below.
+Standalone owners can omit that hook. The registry still creates its terrain
+plane lazily; constructing a World allocates no terrain grid.
+
+## World grid APIs
+
+Each World starts with an empty `layers` LayerStore and a TerrainRegistry bound
+to that world as `terrains`. Their definitions and arrays belong to that world.
+A world without simulation modules can use these services immediately.
+
+`define_layer(name, dtype=float, default=0, *, shape=(), min=None, max=None,
+decay=0.0, diffusion=0.0, color=None, tooltip="", kind="layer", replace=False,
+**props)` creates a Layer using world.width and world.height, stores it in
+world.layers and returns it. Options retain their Layer meanings: shape describes
+the trailing cell dimensions, while props stores extra metadata. Dtype and default
+are also accepted positionally.
+
+An existing name raises DuplicateNameError unless replace=True. Replacement
+allocates a new Layer and array filled from the new default; painted values are
+discarded from the world's mapping. Old references still point to the old object.
+The name retains its dictionary position. Allocation completes before the mapping
+changes, so failed construction preserves an existing layer. This applies to both
+ordinary layers and fields. Plugin reload data preservation belongs to Phase 5.
+
+`define_field(name, *, initial=0.0, min=0.0, max=None, decay=0.0, diffusion=0.0,
+regrow=0.0, regrow_by=None, diffuse_on=None, color=None, tooltip="",
+replace=False, **props)` creates a float layer with kind="field". Initial supplies
+the allocation default. Regrow, regrow_by and diffuse_on are retained in props,
+along with application metadata. Diffusion may exceed 0.25 here because it is an
+update-rate setting; explicit Layer.diffuse calls still enforce their per-call
+stability limit.
+
+Field definitions validate these prerequisites before allocating or replacing:
+
+- Nonzero regrow requires max to be supplied; max=0 is a supplied maximum.
+- A supplied regrow_by must name a property on at least one defined terrain,
+  including when regrow is zero. A property with value zero counts as present.
+
+Missing prerequisites raise ConfigError. Define terrains before defining fields
+that reference their properties. This checks property presence, not numeric type;
+prop_grid performs numeric conversion when used. Diffuse_on is stored for the
+future field-update system and its terrain names are resolved when a mask is used.
+
+Field construction retains the initial value even if it exceeds min/max, matching
+Layer allocation. Call clamp explicitly if needed. Setting decay/diffusion/regrowth
+metadata does not schedule updates: world.step leaves these arrays unchanged
+unless a registered system edits them. The resources module arrives in Phase 4.
+
+```python
+import numpy as np
+from simworld import World
+
+world = World(4, 3)
+world.define_terrain("ground", 1, fertility=0.5)
+world.define_terrain("mud", 3, move_cost=2.5, fertility=1.5)
+world.fill_terrain("ground")
+world.set_terrain(2.8, 1.2, "mud")
+assert world.terrain_at(2, 1).name == "mud"
+
+heat = world.define_layer("heat", np.float32, 1.5)
+food = world.define_field("food", initial=2, max=10, regrow=0.2,
+                          regrow_by="fertility", diffuse_on=["ground", "mud"])
+assert heat.data.shape == food.data.shape == (3, 4)
+assert food.kind == "field" and food.props["regrow_by"] == "fertility"
+np.testing.assert_array_equal(world.terrains.prop_grid("fertility"),
+                              [[0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 1.5, 0.5],
+                               [0.5, 0.5, 0.5, 0.5]])
+world.step()
+assert food.get(2, 1) == 2.0  # Stored rates do not yet install an update system.
+replacement = world.define_layer("heat", default=0, replace=True)
+assert replacement is not heat and heat.get(0, 0) == 1.5
+```
+
+World.define_terrain has the registry's definition signature and returns its
+Terrain record. Definition alone does not allocate or repaint the terrain plane.
+Terrain_at returns a record at `(x, y)`. Set_terrain paints one floored cell and
+fill_terrain paints the whole plane; both resolve the terrain name before creating
+the layer and return None. Unknown names raise UnknownTerrainError. Set_terrain
+preserves Layer's OutOfBoundsError for outside coordinates. Undefinition is
+available through world.terrains.undefine(name).
+
+Successful set/fill calls, definition changes and explicit creation/replacement
+of the named terrain layer invoke world._paths_changed after the change. Failed
+validation or painting sends no notification. Direct array writes and edits to
+the exposed layer mapping bypass this hook. It is currently an empty extension
+hook: there is no path cache yet. Step 076 connects it to the pathfinding service;
+the current tests verify that the sanctioned edits reach the hook at the right
+time. Repainting the same value still sends a notification.
+
+Root imports for Layer and Terrain remain a later public-export task; import
+those types from simworld.layers and simworld.terrain. World methods already
+return the corresponding real objects.
+
 ## World state and ownership
 
 World is the object that connects the engine's services. Its constructor validates
 setting names, creates WorldSettings and resources, initializes empty entity
-stores and name maps, and creates its scheduler and command buffer.
+stores and name maps, owns its layer store and terrain registry, and creates its
+scheduler and command buffer.
 
 | Setting | Default | Current use |
 | --- | --- | --- |
-| width, height | 64, 64 | Retained World dimensions; standalone Layer grids are not yet attached to World |
+| width, height | 64, 64 | Dimensions used when allocating World layers and the terrain plane |
 | seed | 0 | Initializes the world's NumPy generator |
 | dt | 1.0 | Initial simulation time increment stored in resources |
 | cell_size | 8.0 | Retained for later spatial/rendering work |
@@ -670,6 +919,9 @@ construction does not update `world.resources["dt"]`; runtime code reads the
 latter through `world.dt`. Similarly, changing the stored seed does not recreate
 the generator. The `extra` dictionary receives a shallow copy at construction,
 so nested mutable objects can remain shared with the caller.
+
+Changing settings.width/height does not resize existing arrays. New layers use
+the current dimensions; coordinated world resizing belongs to later editor work.
 
 Use `world.rng` for simulation randomness. Repeating the same sequence of calls
 with the same seed and compatible versions supports reproducible results.
@@ -1270,9 +1522,11 @@ Use a focused file when changing one subsystem:
 | [test_ecs.py](../tests/test_ecs.py) | Error behavior, allocation, stale ids, undo, allocator serialization |
 | [test_registry.py](../tests/test_registry.py) | Ordered registration, duplicates, lookup and removal |
 | [test_components.py](../tests/test_components.py) | Component reflection, factories, redefinition and serialization |
+| [test_terrain.py](../tests/test_terrain.py) | Terrain identity/validation, layer preservation, sparse/undefined-id lookups, numeric property caches, masks and invalidation notifications |
 | [test_layers.py](../tests/test_layers.py) | Scalar/vector allocation, dtype/defaults, coordinate access, bounded arithmetic, reductions, interpolation/gradients, windows, diffusion/decay and missing layer lookups |
 | [test_core_components.py](../tests/test_core_components.py) | Built-in component defaults and metadata |
 | [test_world.py](../tests/test_world.py) | Construction, lifecycle, ownership, queries and naming |
+| [test_world_grid.py](../tests/test_world_grid.py) | World-owned grids, layer/field allocation and replacement, regrowth prerequisites, terrain painting and change hooks |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
 | [test_systems.py](../tests/test_systems.py) | Registration context, ordering, cache, gating and profiling |
 | [test_commands.py](../tests/test_commands.py) | Reservations, ordered mutation, callback rounds and bounds, stale skips, strict mode and exception propagation |
@@ -1368,7 +1622,7 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations and layer allocation, arithmetic, sampling, diffusion and decay through Step 031. The following
+The implementation contains the ECS foundations and World layer/terrain APIs through Step 034. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
@@ -1376,8 +1630,9 @@ boundaries are part of the current API behavior:
 | Command errors | Stale operations are skipped and counted by default; strict mode raises; other errors propagate | Implemented in Step 024 |
 | Scheduler integration | World stepping/running, per-system and stage-boundary command flushing, clock advancement | Implemented in Step 025; event dispatch remains Phase 3 |
 | ECS milestone | Phase 1 gate passed; contracts documented | Step 026 complete; Phase 2 starts at Step 027 |
-| Layers | Standalone allocation, access, arithmetic, sampling, neighborhoods, diffusion and decay | Steps 027–031 complete; terrain starts at Step 032 and World integration is Step 034 |
-| Terrain, spatial queries, rendering | Not implemented | Later Phase 2 steps |
+| Layers | Allocation, access, arithmetic, sampling, evolution and World layer/field definitions | Steps 027–031/034 complete; field update scheduling is Phase 4 |
+| Terrain | Registry, lazy grid creation, lookups, property grids, masks and World mutation APIs | Steps 032–034 complete; path-cache hook connected in Step 076 |
+| Spatial queries and rendering | Not implemented | Later Phase 2 steps |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |
 | Full world persistence, plugins, configuration loading | Not implemented; component and allocator conversion already exist | Phase 5 |
