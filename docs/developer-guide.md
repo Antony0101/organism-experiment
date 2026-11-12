@@ -1,8 +1,8 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–029 complete**, as of
-**11 November 2026**. The step number matters: the package version alone does not
+package version **0.1.0**, with implementation **Steps 001–031 complete**, as of
+**12 November 2026**. The step number matters: the package version alone does not
 identify which parts of the blueprint have been built. Phase 1 has passed its
 verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
 and integration requirements for later phases.
@@ -411,7 +411,9 @@ the dtype is a real floating-point type; integer and boolean layers return False
 
 Initial allocation does not clamp or evolve the array. Cell set now uses the
 configured min/max on float layers, as do add, fill and explicit clamp.
-Bounded arithmetic is implemented; diffusion and decay arrive in Step 031.
+Bounded arithmetic, masked diffusion and exponential decay are implemented.
+Field evolution is explicit: call diffuse/decay yourself until field-update
+systems are introduced in the modules phase.
 
 ### Reading and writing cells
 
@@ -515,6 +517,121 @@ Both preserve the array object and existing views, and return None. Fill does no
 change default metadata. Total and mean reduce every array dimension, including
 trailing cell dimensions, and return Python floats. They use NumPy's normal
 reduction behavior, including overflow rules and empty-array warnings/results.
+
+### Diffusion and exponential decay
+
+`diffuse(rate, mask=None)` redistributes values between horizontal and vertical
+neighbors. Each pair exchanges `(neighbor_value - value) * rate`. Both sets of
+pairwise exchanges are calculated from the original data before updating the
+array, so this is one simultaneous numerical step. Every addition has a matching
+subtraction: mass is conserved within floating-point tolerance, and values do not
+wrap around or leak through the grid border.
+
+The rate must be between 0 and 0.25 inclusive; negative, larger or non-finite
+values raise SimWorldError before mutation. This is the explicit scheme's
+stability limit for four neighbors. Diffuse requires an explicit rate argument;
+the diffusion_rate attribute is retained metadata for later update systems. A
+caller modeling a larger diffusion interval must split it into stable substeps;
+automatic splitting belongs to the future resources module.
+
+An optional mask has shape `(height, width)` and is converted to a boolean array.
+Exchange occurs only when both cells in a pair are True. False cells are unchanged,
+and no quantity crosses the boundary between True and False cells. Incorrect mask
+shapes raise SimWorldError before changing data. Vector/matrix fields use the same
+spatial mask for every cell component, with no diffusion between components.
+
+`decay(rate=None, dt=1.0)` multiplies every value by `exp(-rate * dt)`. When rate
+is omitted, it uses decay_rate; an explicit rate overrides it for that call without
+changing metadata. Rate and dt must be finite and non-negative; zero rate or zero
+time leaves data unchanged. Over the same total elapsed time, one call and several
+shorter calls agree within storage precision. Decay reduces quantity rather than
+redistributing it.
+
+```python
+from math import log
+import numpy as np
+from simworld.layers import Layer
+
+field = Layer("chemical", 3, 3, decay=log(2))
+field[1, 1] = 4
+field.diffuse(0.25)
+np.testing.assert_array_equal(field.data, [[0, 1, 0], [1, 0, 1], [0, 1, 0]])
+assert field.total() == 4.0
+field.decay(dt=1)  # Its configured rate halves the quantity in one time unit.
+assert field.total() == 2.0
+
+blocked = Layer("blocked", 3, 1)
+blocked[0] = [4, 0, 0]
+blocked.diffuse(0.25, mask=[[True, False, True]])
+np.testing.assert_array_equal(blocked.data, [[4, 0, 0]])
+```
+
+Both methods require floating-point storage and raise SimWorldError for integer
+or boolean layers. They update the existing array, preserve its dtype and views,
+and return None. They support trailing vector/matrix dimensions. Neither method
+calls clamp: decay can reduce values below min, and later clamping may change mass
+or the equality between split time intervals. Call clamp separately when the
+application requires range limits. Metadata and world time are not modified, and
+these methods are not automatically run by World.step in the current version.
+
+### Sampling and neighborhoods
+
+`sample(x, y)` bilinearly blends the four surrounding cell-center values. Cell
+(0, 0) has its center at world position (0.5, 0.5), so sampling there returns
+that cell's value. Between centers, interpolation varies continuously along x and
+y. Sample clamps each coordinate to the nearest center at the grid boundary;
+positions beyond the grid extend the nearest edge value rather than raising the
+out-of-bounds error used by get. An empty layer raises OutOfBoundsError because
+there is no value to extend.
+
+`gradient(x, y)` returns `(gx, gy)` using unit-distance centered differences:
+`gx = (sample(x+1, y) - sample(x-1, y)) / 2`, with the analogous expression for y.
+This estimates how quickly values rise toward increasing x and y. Since sampling
+extends edge values, the estimate becomes smaller near an edge and zero along
+an axis of a constant or single-cell grid. It is an estimate using that stencil,
+not a normalized direction or an exact analytic derivative of the interpolant.
+
+```python
+import numpy as np
+from simworld.layers import Layer
+
+field = Layer("slope", 3, 3)
+y, x = np.indices((3, 3))
+field.data[:] = 10 + 2 * x + 3 * y
+assert field.sample(0.5, 0.5) == 10.0
+assert field.sample(1, 1) == 12.5
+assert field.gradient(1.5, 1.5) == (2.0, 3.0)
+assert field.sample(-10, -10) == 10.0
+
+patch, x0, y0 = field.window(0.5, 0.5, radius=1)
+assert (x0, y0) == (0, 0)
+np.testing.assert_array_equal(patch, [[10, 12], [13, 15]])
+assert list(field.neighbours(0, 0, diagonal=False)) == [
+    (1, 0, 12.0), (0, 1, 13.0),
+]
+```
+
+Window floors its center to a cell and takes a square of radius cells on each
+side, clipped to the array. The default radius is one; radius zero returns just
+the center cell when it is in bounds. Radius must be an integer; negative values
+raise SimWorldError. It returns `(array_view, x0, y0)`, where x0/y0 are the clipped
+top-left cell indices. The returned view shares storage, retains trailing cell
+dimensions and can be edited. A center outside the grid may produce a partial or
+empty view; its clipped origin remains between zero and width/height. To map a
+patch element back to the world, add its column to x0 and its row to y0.
+
+Neighbours floors its center and lazily yields `(x, y, value)` triples from the
+eight adjacent candidate cells, excluding the center and skipping out-of-bounds
+cells. With diagonal=False it selects only the four orthogonal candidates. Order
+is increasing row y, then column x. An outside center can still have in-bounds
+adjacent cells. Values are read during iteration; vector-cell values are views,
+as with get.
+
+Samples are numeric blends: scalar results are Python floats, including when the
+stored dtype is integer or boolean. Sampling does not change stored data or clamp
+to min/max metadata. Vector/matrix samples are newly computed arrays, and gradient
+returns a pair of arrays with the same cell dimensions. Single rows/columns work
+by extending their only value along the missing direction.
 
 LayerStore preserves ordinary dictionary insertion, lookup and replacement
 behavior. A missing bracket lookup raises UnknownLayerError with known names and
@@ -1153,7 +1270,7 @@ Use a focused file when changing one subsystem:
 | [test_ecs.py](../tests/test_ecs.py) | Error behavior, allocation, stale ids, undo, allocator serialization |
 | [test_registry.py](../tests/test_registry.py) | Ordered registration, duplicates, lookup and removal |
 | [test_components.py](../tests/test_components.py) | Component reflection, factories, redefinition and serialization |
-| [test_layers.py](../tests/test_layers.py) | Scalar/vector allocation, dtype/defaults, coordinate access, bounded arithmetic, reductions, raw indexing and missing layer lookups |
+| [test_layers.py](../tests/test_layers.py) | Scalar/vector allocation, dtype/defaults, coordinate access, bounded arithmetic, reductions, interpolation/gradients, windows, diffusion/decay and missing layer lookups |
 | [test_core_components.py](../tests/test_core_components.py) | Built-in component defaults and metadata |
 | [test_world.py](../tests/test_world.py) | Construction, lifecycle, ownership, queries and naming |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
@@ -1251,7 +1368,7 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations and layer allocation, cell access and arithmetic through Step 029. The following
+The implementation contains the ECS foundations and layer allocation, arithmetic, sampling, diffusion and decay through Step 031. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
@@ -1259,7 +1376,7 @@ boundaries are part of the current API behavior:
 | Command errors | Stale operations are skipped and counted by default; strict mode raises; other errors propagate | Implemented in Step 024 |
 | Scheduler integration | World stepping/running, per-system and stage-boundary command flushing, clock advancement | Implemented in Step 025; event dispatch remains Phase 3 |
 | ECS milestone | Phase 1 gate passed; contracts documented | Step 026 complete; Phase 2 starts at Step 027 |
-| Layers | Standalone allocation, coordinate access, bounded arithmetic, bulk limits and summaries | Steps 027–029 complete; sampling is Step 030 and World integration is Step 034 |
+| Layers | Standalone allocation, access, arithmetic, sampling, neighborhoods, diffusion and decay | Steps 027–031 complete; terrain starts at Step 032 and World integration is Step 034 |
 | Terrain, spatial queries, rendering | Not implemented | Later Phase 2 steps |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |

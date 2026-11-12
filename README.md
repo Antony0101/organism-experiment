@@ -9,7 +9,7 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–029 are complete and **the Phase 0 and Phase 1 gates have passed**.
+Steps 001–031 are complete and **the Phase 0 and Phase 1 gates have passed**.
 Editable installation, headless ECS behavior and the accumulated suite are verified.
 The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
@@ -42,8 +42,12 @@ scalar/vector cell shapes, dtype/default metadata and useful missing-name errors
 Layers support floored coordinate get/set, out-of-bounds read defaults, float-only
 write clamping and raw NumPy-style bracket indexing. Scalar `add`/`take` report
 actual stored changes, and `fill`/`clamp`/`total`/`mean` operate across the grid.
+Layers also provide bilinear `sample`, centered `gradient`, clipped `window` views
+and row-ordered `neighbours` with optional diagonals. Float layers support
+masked, mass-conserving `diffuse()` and exponential `decay()` in place.
+These evolution methods are called explicitly; World does not yet schedule them.
 World grid integration remains Step 034. Phase 2 is in progress.
-**Step 030 — Sample and inspect neighborhoods** in
+**Step 032 — Define terrain identities** in
 [Phase 2](plans/02-grid.md) is next.
 
 Built-in modules and the editor arrive later.
@@ -155,5 +159,5 @@ Steps 021–022 add system registration/context and stage scheduling. Steps 023�
 add deferred structural commands and stale-target handling. Step 025 connects
 World run loops and automatic command flushing. Step 026 verifies the Phase 1
 milestone and documents its contracts. Step 027 adds typed grid allocation;
-Steps 028–029 add cell access and bounded arithmetic; sampling and neighborhoods
-are next.
+Steps 028–030 add cell access, bounded arithmetic, sampling and neighborhoods.
+Step 031 adds diffusion and decay. Terrain identities are next.

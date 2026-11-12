@@ -6,7 +6,7 @@ Steps **027–043** (17 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§5.5
 
 **Phase exit gate:** Grid operations, mass conservation, terrain semantics, spatial comparisons and valid PNG output pass.
 
-Steps 027–029 are complete; Steps 030–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 027–031 are complete; Steps 032–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
 
 ### Step 027 — Allocate typed grid layers
 
@@ -28,13 +28,13 @@ Steps 027–029 are complete; Steps 030–043 are unstarted. Check a box only af
 
 ### Step 030 — Sample and inspect neighborhoods
 
-- [ ] **Change:** Add bilinear sample, gradient, window and neighbour enumeration.
+- [x] **Change:** Add bilinear sample, gradient, window and neighbour enumeration.
 - **Verify:** Cell-center sampling, edges, clipped window origins and diagonal selection pass small hand-calculated cases.
 - **Blueprint:** §5.5.
 
 ### Step 031 — Diffuse and decay fields
 
-- [ ] **Change:** Implement masked pairwise diffusion and exponential decay with stable-rate validation.
+- [x] **Change:** Implement masked pairwise diffusion and exponential decay with stable-rate validation.
 - **Verify:** Diffusion conserves mass, cannot cross the mask/border, and rejects unstable rates; split decay intervals agree within tolerance.
 - **Blueprint:** §5.5.
 
