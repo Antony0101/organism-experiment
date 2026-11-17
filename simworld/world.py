@@ -16,6 +16,7 @@ from .errors import (
 )
 from .registry import component_from_dict, component_name, loading_into
 from .layers import Layer, LayerStore
+from .spatial import SpatialHash
 from .systems import Scheduler, SystemDef, system as system_decorator
 from .terrain import TERRAIN_LAYER, Terrain, TerrainRegistry
 
@@ -69,6 +70,7 @@ class World:
         }
         self.layers = LayerStore()
         self.terrains = TerrainRegistry(self)
+        self.spatial = SpatialHash(cell_size=cell_size)
         self._alloc = EntityAllocator()
         self._stores: dict[str, dict[Entity, t.Any]] = {}
         self._names: dict[str, Entity] = {}
@@ -78,6 +80,44 @@ class World:
         self.scheduler = Scheduler(self)
         self._systems = self.scheduler.systems
         self._current_module: str | None = None
+        self._install_core()
+
+    def _install_core(self) -> None:
+        """Install the available core services; brains/actions arrive in Phase 3."""
+        def sync(world):
+            world.sync_spatial()
+
+        for name, stage, order in (
+            ("spatial_sync", "sense", -100), ("spatial_sync_late", "late", 100),
+        ):
+            self.add_system(SystemDef(
+                name, sync, stage=stage, order=order, module="core", reads=("Position",),
+            ))
+
+    def sync_spatial(self) -> None:
+        """Refresh bucket membership after direct Position-coordinate changes."""
+        self.spatial.sync(self._stores.get("Position", {}))
+
+    def nearby(self, pos, radius, *, with_=(), exclude=None, distances=False) -> list:
+        """Find nearby ids, or (distance, id) pairs; entity centers exclude self."""
+        source = None
+        if isinstance(pos, int):
+            source = pos
+            pos = self.get(pos, "Position")
+        if hasattr(pos, "x") and hasattr(pos, "y"):
+            x, y = pos.x, pos.y
+        else:
+            x, y = pos
+        required = [self._stores.get(component_name(comp), {}) for comp in with_]
+        matches = [
+            (distance, entity)
+            for distance, entity in self.spatial.query(
+                x, y, radius, self._stores.get("Position", {}),
+            )
+            if entity != source and entity != exclude
+            and all(entity in store for store in required)
+        ]
+        return matches if distances else [entity for _, entity in matches]
 
     def define_layer(
         self, name, dtype=float, default=0, *, shape=(), min=None, max=None,
@@ -213,6 +253,8 @@ class World:
         entity = self._alloc.alloc()
         for registered_name, comp in prepared.items():
             self._stores.setdefault(registered_name, {})[entity] = comp
+            if registered_name == "Position":
+                self.spatial.insert(entity, comp.x, comp.y)
         if name is not None:
             self._names[name] = entity
             self._entity_names[entity] = name
@@ -246,6 +288,7 @@ class World:
     def despawn(self, e: Entity) -> None:
         """Remove a live entity's components and name, then release its slot."""
         self._alloc.check(e)
+        self.spatial.remove(e)
         for store in self._stores.values():
             store.pop(e, None)
         name = self._entity_names.pop(e, None)
@@ -371,6 +414,8 @@ class World:
             prepared.append((name, comp))
         for name, comp in prepared:
             self._stores.setdefault(name, {})[e] = comp
+            if name == "Position":
+                self.spatial.insert(e, comp.x, comp.y)
 
     def remove(self, e: Entity, *components) -> None:
         """Remove registered component types; absent components are harmless."""
@@ -380,6 +425,8 @@ class World:
             store = self._stores.get(name)
             if store is not None:
                 store.pop(e, None)
+        if "Position" in names:
+            self.spatial.remove(e)
 
     def get(self, e: Entity, comp):
         """Return a component, distinguishing a missing component from a stale id."""

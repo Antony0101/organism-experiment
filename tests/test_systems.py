@@ -37,7 +37,7 @@ def test_outside_context_registration_is_explicit_and_world_definitions_are_inde
         pass
 
     first, second = World(), World()
-    assert first._systems == {} and second._systems == {}
+    assert set(first._systems) == set(second._systems) == {"spatial_sync", "spatial_sync_late"}
     first.register(move)
     second.register(move)
     assert first._systems["movement"].fn is move
@@ -67,7 +67,8 @@ def test_nested_registration_contexts_restore_outer_world_even_after_error():
                 raise RuntimeError("context probe")
         assert active_world() is first
     assert active_world() is None
-    assert list(first._systems) == ["outer"] and list(second._systems) == ["inner"]
+    assert list(first._systems) == ["spatial_sync", "spatial_sync_late", "outer"]
+    assert list(second._systems) == ["spatial_sync", "spatial_sync_late", "inner"]
 
 
 def test_context_restores_after_duplicate_registration_error():
@@ -116,14 +117,16 @@ def test_scheduler_stage_order_and_registration_sequence_break_ties():
         scheduler.add(SystemDef(name, lambda w, name=name: calls.append(name),
                                 stage=stage, order=order, seq=999))
     assert scheduler.get("first").seq < scheduler.get("second").seq
-    assert [s.name for s in scheduler.ordered()] == ["input", "early", "first", "second", "late"]
+    assert [s.name for s in scheduler.ordered()] == [
+        "input", "spatial_sync", "early", "first", "second", "late", "spatial_sync_late",
+    ]
     scheduler.run_step()
     assert calls == ["input", "early", "first", "second", "late"]
     assert world.tick == 0 and world.time == 0  # Clock advancement belongs to World.step.
 
 
 def test_custom_stages_and_invalid_stage_edits():
-    scheduler = World().scheduler
+    scheduler = Scheduler(World())
     scheduler.add_stage("prepare", before="input")
     scheduler.add_stage("cleanup", after="update")
     scheduler.add_stage("final")
@@ -141,7 +144,7 @@ def test_custom_stages_and_invalid_stage_edits():
 
 
 def test_scheduler_registration_errors_replacement_removal_and_enabled_flags():
-    scheduler = World().scheduler
+    scheduler = Scheduler(World())
     original = SystemDef("same", lambda w: None)
     scheduler.add(original)
     with pytest.raises(DuplicateNameError):
@@ -181,7 +184,7 @@ def test_scheduler_cache_invalidates_on_membership_stage_and_explicit_order_edit
     assert calls == ["b", "a"]
     scheduler.remove("a")
     assert scheduler._sorted is None
-    assert [s.name for s in scheduler.ordered()] == ["b"]
+    assert [s.name for s in scheduler.ordered()] == ["spatial_sync", "b", "spatial_sync_late"]
     scheduler.add_stage("custom")
     assert scheduler._sorted is None
     scheduler.ordered()
@@ -211,7 +214,7 @@ def test_scheduler_gates_disabled_modules_and_every_n_ticks_without_enforcing_re
 
 
 def test_scheduler_profiling_accumulates_enabled_system_time(monkeypatch):
-    scheduler = World().scheduler
+    scheduler = Scheduler(World())
     scheduler.add(SystemDef("active", lambda w: None))
     scheduler.add(SystemDef("disabled", lambda w: None, enabled=False))
     clock = iter([1.0, 1.25, 2.0, 2.5])
@@ -234,4 +237,4 @@ def test_world_registration_uses_scheduler_stage_validation_and_context():
     assert world._systems is world.scheduler.systems
     with pytest.raises(UnknownSystemError, match="stage"):
         world.add_system(move, name="invalid", stage="missing")
-    assert list(world.scheduler.systems) == ["move"]
+    assert list(world.scheduler.systems) == ["spatial_sync", "spatial_sync_late", "move"]

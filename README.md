@@ -9,7 +9,7 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–034 are complete and **the Phase 0 and Phase 1 gates have passed**.
+Steps 001–037 are complete and **the Phase 0 and Phase 1 gates have passed**.
 Editable installation, headless ECS behavior and the accumulated suite are verified.
 The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
@@ -53,8 +53,15 @@ World owns its `layers` and `terrains`, with `define_layer`/`define_field` for
 allocation and validated regrowth metadata. Layer replacement requires
 `replace=True`. `define_terrain`, `terrain_at`, `set_terrain` and `fill_terrain`
 connect terrain definitions and painting to World, including the change hook
-for later path-cache invalidation. Phase 2 is in progress.
-**Step 035 — Build the spatial hash** in
+for later path-cache invalidation. `simworld.spatial.SpatialHash` provides standalone
+bucket membership, Position synchronization and radius searches sorted by
+distance and entity id. World owns `spatial`, updates membership through entity
+lifecycle methods and provides `nearby` with component filters and optional
+distances. `sync_spatial` refreshes direct position edits; core systems perform
+that refresh during sense (-100) and late (100).
+`simworld.worldgen.value_noise` generates normalized float grids using an explicit
+RNG, interpolated octaves and reproducible seeds. Phase 2 is in progress.
+**Step 038 — Paint procedural terrain** in
 [Phase 2](plans/02-grid.md) is next.
 
 Built-in modules and the editor arrive later.
@@ -168,4 +175,6 @@ World run loops and automatic command flushing. Step 026 verifies the Phase 1
 milestone and documents its contracts. Step 027 adds typed grid allocation;
 Steps 028–030 add cell access, bounded arithmetic, sampling and neighborhoods.
 Step 031 adds diffusion and decay; Step 032 adds terrain identities; Step 033 adds
-terrain lookup grids; Step 034 adds World grid APIs. The spatial hash is next.
+terrain lookup grids; Step 034 adds World grid APIs; Step 035 adds the standalone
+spatial hash; Step 036 connects it to World; Step 037 adds seeded value noise.
+Procedural terrain painting is next.

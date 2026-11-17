@@ -19,7 +19,8 @@ def test_bound_system_decorator_registers_once_and_restores_outer_context():
         with pytest.raises(DuplicateNameError):
             world.system(name="bound")(update)
         assert active_world() is other
-    assert active_world() is None and other.scheduler.ordered() == []
+    assert active_world() is None
+    assert [sd.name for sd in other.scheduler.ordered()] == ["spatial_sync", "spatial_sync_late"]
     definition = world.scheduler.get("bound")
     assert definition.fn is update and definition.stage == "act"
     assert (definition.order, definition.base_order, definition.every) == (3, 3, 2)
@@ -75,7 +76,7 @@ def test_systems_see_previous_system_commands_before_clock_advances():
     assert world.commands.apply() == 0
 
 
-def test_empty_scheduler_flushes_pending_commands_and_step_advances_clock():
+def test_world_without_user_systems_flushes_pending_commands_and_step_advances_clock():
     world = World(dt=0.5)
     entity = world.commands.spawn(Position())
     world.step(dt=0.25)
@@ -176,7 +177,7 @@ def test_profiling_includes_commands_and_records_time_on_command_failure(monkeyp
 
     world.add_system(update)
     world.step()
-    assert world.scheduler.timings == {"update": 6}
+    assert world.scheduler.timings == {"spatial_sync": 0, "update": 6, "spatial_sync_late": 0}
 
     def fail(w):
         elapsed[0] += 3
@@ -185,5 +186,5 @@ def test_profiling_includes_commands_and_records_time_on_command_failure(monkeyp
     command = fail
     with pytest.raises(ValueError, match="apply failed"):
         world.step()
-    assert world.scheduler.timings == {"update": 11}
+    assert world.scheduler.timings == {"spatial_sync": 0, "update": 11, "spatial_sync_late": 0}
     assert (world.tick, world.time) == (1, 1)

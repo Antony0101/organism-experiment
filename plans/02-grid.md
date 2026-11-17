@@ -6,7 +6,7 @@ Steps **027–043** (17 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§5.5
 
 **Phase exit gate:** Grid operations, mass conservation, terrain semantics, spatial comparisons and valid PNG output pass.
 
-Steps 027–034 are complete; Steps 035–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 027–037 are complete; Steps 038–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
 
 ### Step 027 — Allocate typed grid layers
 
@@ -58,19 +58,19 @@ Steps 027–034 are complete; Steps 035–043 are unstarted. Check a box only af
 
 ### Step 035 — Build the spatial hash
 
-- [ ] **Change:** Add bucket insert/remove/clear/sync and radius query in spatial.py.
+- [x] **Change:** Add bucket insert/remove/clear/sync and radius query in spatial.py.
 - **Verify:** Crossing buckets and removing Position clears stale entries; radius results match brute force and sort by (distance, entity).
 - **Blueprint:** §5.14.
 
 ### Step 036 — Connect spatial indexing to World
 
-- [ ] **Change:** Wire entity lifecycle, sync_spatial and nearby inputs/filters plus sense/late synchronization systems.
+- [x] **Change:** Wire entity lifecycle, sync_spatial and nearby inputs/filters plus sense/late synchronization systems.
 - **Verify:** Spawn/despawn updates are immediate; manual movement requires sync; entity-id queries exclude self and tie order stays deterministic.
 - **Blueprint:** §§3.4, 5.7, 5.14.
 
 ### Step 037 — Generate seeded value noise
 
-- [ ] **Change:** Add value_noise with octave interpolation and normalization using an explicitly supplied generator.
+- [x] **Change:** Add value_noise with octave interpolation and normalization using an explicitly supplied generator.
 - **Verify:** Output shape/range and same-seed equality hold on rectangular and tiny grids; no module-level random draws occur.
 - **Blueprint:** §5.18.
 

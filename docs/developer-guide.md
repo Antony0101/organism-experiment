@@ -1,8 +1,8 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–034 complete**, as of
-**12 November 2026**. The step number matters: the package version alone does not
+package version **0.1.0**, with implementation **Steps 001–037 complete**, as of
+**18 November 2026**. The step number matters: the package version alone does not
 identify which parts of the blueprint have been built. Phase 1 has passed its
 verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
 and integration requirements for later phases.
@@ -26,6 +26,8 @@ Python process with this package installed.
 - [Typed grid allocation](#typed-grid-allocation)
 - [Terrain identities](#terrain-identities)
 - [World grid APIs](#world-grid-apis)
+- [Spatial indexing](#spatial-indexing)
+- [Seeded value noise](#seeded-value-noise)
 - [World state and ownership](#world-state-and-ownership)
 - [Entity and component operations](#entity-and-component-operations)
 - [Queries and iteration](#queries-and-iteration)
@@ -116,6 +118,7 @@ World
   allocator: live slots and generations
   component stores: component name -> entity id -> component instance
   entity names and prefab templates
+  layers, terrain definitions and spatial bucket membership
   scheduler: system definitions and execution order
   command buffer: pending mutations and callbacks
 ```
@@ -132,9 +135,11 @@ its type available everywhere while spawning an entity affects one world.
 | [simworld/registry.py](../simworld/registry.py) | Named registries, component decorators, field metadata, component serialization, active registration contexts |
 | [simworld/terrain.py](../simworld/terrain.py) | Terrain records, validated registration, lazy grid creation and per-cell cost/passability/property lookup tables |
 | [simworld/layers.py](../simworld/layers.py) | Typed NumPy grid allocation, layer metadata and named layer storage |
+| [simworld/spatial.py](../simworld/spatial.py) | Standalone spatial buckets, membership synchronization and deterministic radius searches |
+| [simworld/worldgen.py](../simworld/worldgen.py) | Seeded value noise from bilinearly interpolated random lattices |
 | [simworld/components.py](../simworld/components.py) | Position, Appearance, and Parent data types |
 | [simworld/ecs.py](../simworld/ecs.py) | Entity ids, slot allocation, allocator undo/serialization, command buffer |
-| [simworld/world.py](../simworld/world.py) | World state and grid, entity, component, name, prefab, and system registration APIs |
+| [simworld/world.py](../simworld/world.py) | World state, grids, spatial lifecycle/nearby queries, entities, prefabs and system registration |
 | [simworld/systems.py](../simworld/systems.py) | System metadata, decorator, and scheduler |
 | [tests](../tests) | Executable behavior contracts |
 | [plans](../plans/README.md) | Sequential implementation plan and progress evidence |
@@ -149,7 +154,8 @@ prop, COMPONENTS, system, DEFAULT_STAGES, entity id decoding helpers, and the
 engine exceptions. Import Parent from `simworld.components`; import
 EntityAllocator and CommandBuffer from `simworld.ecs`; import SystemDef and
 Scheduler from `simworld.systems`. Serialization and context helpers are available
-from `simworld.registry`. Import Layer and LayerStore from `simworld.layers`.
+from `simworld.registry`. Import Layer and LayerStore from `simworld.layers`,
+and SpatialHash from `simworld.spatial`.
 
 ## Components and their metadata
 
@@ -887,19 +893,217 @@ Root imports for Layer and Terrain remain a later public-export task; import
 those types from simworld.layers and simworld.terrain. World methods already
 return the corresponding real objects.
 
+## Spatial indexing
+
+A spatial index answers “which entities are close to this point?” Components
+remain the source of their actual coordinates. SpatialHash stores only bucket
+membership, grouping entities by location so a radius query can skip distant
+buckets. Import it from `simworld.spatial`; every World owns an instance as
+world.spatial, configured from the constructor's cell_size.
+
+`SpatialHash(cell_size=8.0)` divides the coordinate plane into squares. A position
+maps to `(int(x // cell_size), int(y // cell_size))`. With size 4, x=3.9 is in
+column 0, x=4 is in column 1, and x=-0.1 is in column -1. Buckets cover the whole
+plane, including negative coordinates, independently of any World's bounds.
+Construction requires a finite, strictly positive size and otherwise raises
+ValueError. Cell size controls search granularity; it does not change positions
+or the units of query distances.
+
+Two internal maps maintain membership: _cells maps bucket coordinates to sets of
+entity ids, and _where maps each entity to its bucket. Position objects remain
+in the caller's mapping. The index assumes the caller supplies suitable entity
+keys and finite numeric coordinates; it does not check allocator liveness.
+
+| Method | Behavior |
+| --- | --- |
+| `insert(e, x, y)` | Insert or relocate an entity; the same bucket is a no-op |
+| `remove(e)` | Remove membership; missing ids are harmless; empty buckets disappear |
+| `clear()` | Empty both maps, retaining cell_size |
+| `sync(positions)` | Reconcile all memberships with an entity-to-Position mapping |
+| `query(x, y, radius, positions)` | Return a fresh sorted list of `(distance, entity)` pairs |
+
+Sync expects the complete Position mapping, rather than only changed entities.
+It inserts new entities, relocates bucket crossings and removes every indexed
+entity absent from that mapping. Removal works even if another entity was added
+at the same time and the mapping length stayed unchanged.
+
+Query visits the buckets overlapping the radius's bounding box, then uses current
+Position values to calculate squared Euclidean distance. It includes points on
+the circle boundary and rejects box corners outside the circle. Radius zero
+selects exact matches. Negative or non-finite radii raise ValueError.
+
+Results sort by distance, then numeric entity id. This final sort makes the output
+deterministic despite bucket sets having arbitrary iteration order. The query
+does not exclude the center entity or filter components; World.nearby provides
+those conveniences.
+
+```python
+from simworld import Position, World
+from simworld.spatial import SpatialHash
+
+world = World(20, 20)
+center = world.spawn(Position(2, 3))
+edge = world.spawn(Position(5, 7))
+world.spawn(Position(18, 18))
+positions = {entity: position for entity, position in world.query(Position)}
+spatial = SpatialHash(cell_size=4)
+spatial.sync(positions)
+assert spatial.query(2, 3, 5, positions) == [(0.0, center), (5.0, edge)]
+
+positions[edge].x, positions[edge].y = 12, 3
+assert spatial.query(12, 3, 0, positions) == []  # Still indexed in its old bucket.
+spatial.sync(positions)
+assert spatial.query(12, 3, 0, positions) == [(0.0, edge)]
+
+world.remove(center, Position)
+positions = {entity: position for entity, position in world.query(Position)}
+spatial.sync(positions)
+assert spatial.query(2, 3, 0, positions) == []
+```
+
+Queries read current coordinates in visited buckets. Movement inside the same
+bucket therefore appears immediately, while a bucket crossing can miss a result
+until insert or sync updates membership. An indexed id missing from the supplied
+mapping is skipped safely; query does not remove that stale membership. Use sync
+to clean it up. A mapping assembled from World.query contains component references
+but does not automatically gain or lose keys when World entities change.
+
+Each index owns independent maps. If cell_size is changed directly, use a positive
+finite value, clear the index and sync again to rebuild every membership.
+
+### Spatial queries through World
+
+`world.nearby(pos, radius, *, with_=(), exclude=None, distances=False)` uses the
+World's actual Position store, so callers do not need to construct a mapping.
+Pos can be a coordinate pair, an object with x/y attributes, or a Python integer
+entity id. Entity-id queries use that entity's Position and always exclude the
+source entity. Point/object queries can include every entity at that location.
+An explicit exclude removes one additional entity id.
+
+The default result is a list of entity ids. With distances=True it returns
+`(distance, entity)` pairs, retaining SpatialHash's distance/id ordering and
+inclusive circle boundary. With_ is an iterable of component classes, registered
+names or instances; every requested component must be present. Unknown component
+filters raise UnknownComponentError even when the spatial result is empty.
+
+An entity-id center must be live and have Position: otherwise get raises
+StaleEntityError or MissingComponentError respectively. Bool ids are rejected
+through the allocator's checks. Radius validation comes from SpatialHash.
+
+```python
+from simworld import Appearance, Position, World
+
+world = World(cell_size=4)
+observer = world.spawn(Position(2, 3))
+target = world.spawn(Position(5, 7), Appearance())
+world.spawn(Position(18, 18))
+
+assert world.nearby(observer, 5) == [target]
+assert world.nearby(Position(2, 3), 5) == [observer, target]
+assert world.nearby((2, 3), 5, with_=(Appearance,), distances=True) == [(5.0, target)]
+assert world.nearby(observer, 5, exclude=target) == []
+
+world.get(target, Position).x, world.get(target, Position).y = 12, 3
+assert world.nearby((12, 3), 0) == []
+world.sync_spatial()
+assert world.nearby((12, 3), 0) == [target]
+world.remove(target, Position)
+assert world.nearby((12, 3), 0) == []
+```
+
+Spawn/spawn_prefab insert Position membership immediately. Add inserts or
+relocates it when attaching/replacing Position, remove discards it when removing
+Position, and despawn removes membership before releasing the entity id. Deferred
+spawns join the index when their components attach during commands.apply; queued
+add/remove/despawn operations use the same World lifecycle methods. A reserved
+id with no attached Position is absent from radius results. Validation failures
+for component registration leave existing membership unchanged.
+
+`world.sync_spatial()` reconciles the whole Position store and returns None.
+Nearby does not sync implicitly. After direct coordinate mutation, call sync
+before queries that need the new bucket membership. Within-bucket changes are
+already visible because queries read the stored Position objects.
+
+Every World installs two enabled core systems: spatial_sync at sense/order -100
+and spatial_sync_late at late/order 100, both tagged module="core". They refresh
+membership for sense behavior and after normal update/late behavior. The numeric
+priorities still apply: a sense system at -101 runs before the first sync, and a
+late system at 101 runs after the last one. A later coordinate edit can therefore
+require explicit synchronization. Systems can be disabled through the normal
+enable/disable API, and profiling includes their execution and command flushes.
+Brain/action systems are added when their services arrive in Phase 3.
+
+## Seeded value noise
+
+Value noise creates a grid of numbers with broad variations and smaller details.
+It is a building block for procedural maps: a later operation can classify low
+values as water and high values as land. The function itself returns numbers and
+does not paint terrain or modify layers.
+
+Import `value_noise` from `simworld.worldgen`. Its signature is
+`value_noise(rng, height, width, scale=32.0, octaves=4, persistence=0.5)`.
+It returns a fresh float64 NumPy array indexed `[y, x]`, with shape
+`(height, width)` and values in `[0, 1]`.
+
+| Argument | Meaning |
+| --- | --- |
+| rng | Explicit generator, normally world.rng or np.random.default_rng(seed) |
+| height, width | Output rows and columns; nonnegative integers |
+| scale | Initial spacing between random lattice points, in grid cells |
+| octaves | Positive integer number of detail layers to combine |
+| persistence | Nonnegative multiplier for each successive octave's amplitude |
+
+For each octave, the function draws a rectangular lattice through rng.random.
+It interpolates each output position between four surrounding lattice values,
+first across x and then across y. Each successive octave halves the spacing,
+down to a minimum of one cell, and receives weight persistence times the previous
+one. Scale below one is treated as one to avoid generating unused subpixel grids.
+At persistence=0, only the first octave affects the result; the function still
+draws a lattice for each requested octave. Values greater than one emphasize
+finer octaves; accumulation rescales the running sum to keep amplitudes finite.
+
+After combining octaves, it subtracts the minimum and divides by the resulting
+span. Nonconstant outputs therefore have minimum zero and maximum one. Constant
+outputs become all zero, including a 1x1 result. Empty grids retain their requested
+shape and consume no randomness. Validation occurs before any draw: negative
+dimensions, nonpositive octaves, nonfinite/nonpositive scale and nonfinite/negative
+persistence raise ValueError; fractional dimensions/octaves raise TypeError.
+
+```python
+import numpy as np
+from simworld import World
+from simworld.worldgen import value_noise
+
+world = World(13, 7, seed=73)
+noise = value_noise(world.rng, world.height, world.width, scale=4, octaves=3)
+repeat = value_noise(np.random.default_rng(73), 7, 13, scale=4, octaves=3)
+np.testing.assert_array_equal(noise, repeat)
+assert noise.shape == (7, 13)
+assert noise.min() == 0 and noise.max() == 1
+assert world.layers == {}  # Generation returns data; it does not install a layer.
+```
+
+No generator is created inside this module and importing it performs no random
+draws. Using world.rng advances that world's random sequence, so reproducibility
+requires the same parameters, call order and compatible NumPy environment.
+The blueprint leaves sampling placement/normalization details unspecified; the
+implementation samples at output integer coordinates divided by octave spacing
+and uses the final min/max normalization above. Terrain bands/blob painting arrive
+in Step 038; passable random spawn positions arrive in Step 039.
+
 ## World state and ownership
 
 World is the object that connects the engine's services. Its constructor validates
 setting names, creates WorldSettings and resources, initializes empty entity
-stores and name maps, owns its layer store and terrain registry, and creates its
-scheduler and command buffer.
+stores and name maps, owns its layer store, terrain registry and spatial index,
+and creates its scheduler and command buffer with the two core sync systems.
 
 | Setting | Default | Current use |
 | --- | --- | --- |
 | width, height | 64, 64 | Dimensions used when allocating World layers and the terrain plane |
 | seed | 0 | Initializes the world's NumPy generator |
 | dt | 1.0 | Initial simulation time increment stored in resources |
-| cell_size | 8.0 | Retained for later spatial/rendering work |
+| cell_size | 8.0 | Spatial bucket size; must be finite and greater than zero |
 | energy_component | `"Energy"` | Retained configuration for later behavior |
 | default_speed | 1.0 | Retained configuration for later behavior |
 | shuffle_actions | True | Retained configuration for later action processing |
@@ -907,7 +1111,7 @@ scheduler and command buffer.
 
 Unknown setting names raise TypeError. The constructor does not generally check
 ranges or enforce annotations. Passing nonempty `modules` raises
-NotImplementedError.
+NotImplementedError. SpatialHash validates cell_size when the World is created.
 
 Resources hold values shared across systems: time starts at `0.0`, tick at `0`,
 dt at the supplied value, rng is `np.random.default_rng(seed)`, and settings
@@ -922,6 +1126,9 @@ so nested mutable objects can remain shared with the caller.
 
 Changing settings.width/height does not resize existing arrays. New layers use
 the current dimensions; coordinated world resizing belongs to later editor work.
+Changing settings.cell_size alone does not reconfigure the existing index. To
+change it manually, assign a valid world.spatial.cell_size, clear that index and
+call world.sync_spatial.
 
 Use `world.rng` for simulation randomness. Repeating the same sequence of calls
 with the same seed and compatible versions supports reproducible results.
@@ -1194,6 +1401,11 @@ input -> sense -> decide -> act -> update -> late
 Stage order takes precedence over numeric order. Within one stage, smaller order
 values run first. Equal values use registration sequence. For example, an input
 system with order 100 runs before an update system with order -100.
+
+A new World already contains spatial_sync (sense/-100) and spatial_sync_late
+(late/100). Each definition belongs to that World and carries module="core".
+The Scheduler class itself starts empty; constructing Scheduler(world) directly
+does not install World services.
 
 | Scheduler method | Behavior |
 | --- | --- |
@@ -1527,6 +1739,9 @@ Use a focused file when changing one subsystem:
 | [test_core_components.py](../tests/test_core_components.py) | Built-in component defaults and metadata |
 | [test_world.py](../tests/test_world.py) | Construction, lifecycle, ownership, queries and naming |
 | [test_world_grid.py](../tests/test_world_grid.py) | World-owned grids, layer/field allocation and replacement, regrowth prerequisites, terrain painting and change hooks |
+| [test_spatial.py](../tests/test_spatial.py) | Bucket moves/removal, Position synchronization, circle boundaries, deterministic ties and radius results against brute force |
+| [test_world_spatial.py](../tests/test_world_spatial.py) | Immediate/deferred spatial lifecycle, nearby inputs/filters, sync priorities and results against full scans |
+| [test_worldgen.py](../tests/test_worldgen.py) | Seeded noise shape/range, interpolation and octave weights, constant/empty grids, validation and explicit RNG ownership |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
 | [test_systems.py](../tests/test_systems.py) | Registration context, ordering, cache, gating and profiling |
 | [test_commands.py](../tests/test_commands.py) | Reservations, ordered mutation, callback rounds and bounds, stale skips, strict mode and exception propagation |
@@ -1622,7 +1837,7 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations and World layer/terrain APIs through Step 034. The following
+The implementation contains the ECS foundations, World grid/spatial APIs and seeded value noise through Step 037. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
@@ -1632,7 +1847,9 @@ boundaries are part of the current API behavior:
 | ECS milestone | Phase 1 gate passed; contracts documented | Step 026 complete; Phase 2 starts at Step 027 |
 | Layers | Allocation, access, arithmetic, sampling, evolution and World layer/field definitions | Steps 027–031/034 complete; field update scheduling is Phase 4 |
 | Terrain | Registry, lazy grid creation, lookups, property grids, masks and World mutation APIs | Steps 032–034 complete; path-cache hook connected in Step 076 |
-| Spatial queries and rendering | Not implemented | Later Phase 2 steps |
+| Spatial queries | World-owned SpatialHash, lifecycle updates, nearby filters and scheduled synchronization | Steps 035–036 complete |
+| World generation | Seeded, normalized value_noise | Step 037 complete; terrain painting/spawn sampling are Steps 038–039 |
+| Rendering | Not implemented | Later Phase 2 steps |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |
 | Full world persistence, plugins, configuration loading | Not implemented; component and allocator conversion already exist | Phase 5 |
