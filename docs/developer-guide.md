@@ -1,7 +1,7 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–037 complete**, as of
+package version **0.1.0**, with implementation **Steps 001–040 complete**, as of
 **18 November 2026**. The step number matters: the package version alone does not
 identify which parts of the blueprint have been built. Phase 1 has passed its
 verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
@@ -28,6 +28,9 @@ Python process with this package installed.
 - [World grid APIs](#world-grid-apis)
 - [Spatial indexing](#spatial-indexing)
 - [Seeded value noise](#seeded-value-noise)
+- [Procedural terrain painting](#procedural-terrain-painting)
+- [Sampling spawn positions](#sampling-spawn-positions)
+- [Headless RGB and ASCII rendering](#headless-rgb-and-ascii-rendering)
 - [World state and ownership](#world-state-and-ownership)
 - [Entity and component operations](#entity-and-component-operations)
 - [Queries and iteration](#queries-and-iteration)
@@ -136,7 +139,8 @@ its type available everywhere while spawning an entity affects one world.
 | [simworld/terrain.py](../simworld/terrain.py) | Terrain records, validated registration, lazy grid creation and per-cell cost/passability/property lookup tables |
 | [simworld/layers.py](../simworld/layers.py) | Typed NumPy grid allocation, layer metadata and named layer storage |
 | [simworld/spatial.py](../simworld/spatial.py) | Standalone spatial buckets, membership synchronization and deterministic radius searches |
-| [simworld/worldgen.py](../simworld/worldgen.py) | Seeded value noise from bilinearly interpolated random lattices |
+| [simworld/worldgen.py](../simworld/worldgen.py) | Seeded value noise, terrain painting and bounded passable-position sampling |
+| [simworld/render.py](../simworld/render.py) | Terrain/field/entity RGB composition and downsampled ASCII maps |
 | [simworld/components.py](../simworld/components.py) | Position, Appearance, and Parent data types |
 | [simworld/ecs.py](../simworld/ecs.py) | Entity ids, slot allocation, allocator undo/serialization, command buffer |
 | [simworld/world.py](../simworld/world.py) | World state, grids, spatial lifecycle/nearby queries, entities, prefabs and system registration |
@@ -164,7 +168,7 @@ A component instance describes one aspect of an entity. The built-in types are:
 | Component | Fields and defaults | Current meaning |
 | --- | --- | --- |
 | Position | `x=0.0`, `y=0.0` | Coordinates; no automatic movement or bounds enforcement |
-| Appearance | `color=(255, 255, 255)`, `size=1` | Display data; rendering is not implemented |
+| Appearance | `color=(255, 255, 255)`, `size=1` | Color used by headless rendering; size retained for later editor/viewer behavior |
 | Parent | `entity=0` | Optional parent reference; no hierarchy enforcement or cascading deletion |
 
 ### What the component decorator does
@@ -1088,8 +1092,211 @@ draws. Using world.rng advances that world's random sequence, so reproducibility
 requires the same parameters, call order and compatible NumPy environment.
 The blueprint leaves sampling placement/normalization details unspecified; the
 implementation samples at output integer coordinates divided by octave spacing
-and uses the final min/max normalization above. Terrain bands/blob painting arrive
-in Step 038; passable random spawn positions arrive in Step 039.
+and uses the final min/max normalization above. Terrain bands and blob painting
+use it as described below; random_positions samples spawn locations on that terrain.
+
+## Procedural terrain painting
+
+Two helpers in `simworld.worldgen` paint defined terrain ids into the World's
+terrain plane. Both use world.rng, keep an existing layer and its array/metadata,
+and notify world._paths_changed after a painting operation. Property grids read
+current cell ids, so they reflect these edits without a definition rebuild.
+
+`terrain_from_noise(world, bands, scale=40.0, octaves=4)` generates value noise,
+paints the whole terrain plane and returns the noise array. Bands is a nonempty
+sequence of `(terrain_name, upper_threshold)` pairs. Each cell receives the first
+band in the supplied order whose threshold is at least its noise value. Exact
+thresholds, including zero, are included. A cell matching no band receives the
+last band's terrain, even when its noise is above the final threshold.
+
+Normally bands have increasing thresholds, such as water through 0.3, mud through
+0.5 and ground through 1.0. The helper preserves the supplied order rather than
+sorting; an earlier broad band can shadow later bands. All names resolve before
+generation, and thresholds must be finite. They need not span [0,1] because the
+last-band fallback covers unmatched cells. Invalid bands raise ValueError, or
+UnknownTerrainError for missing names, before RNG consumption or painting.
+Noise parameter validation is inherited from value_noise.
+
+An existing terrain plane is completely overwritten; a missing plane is created
+lazily. This includes empty and single-cell grids. A single-cell noise value is
+zero and therefore matches the first band with a nonnegative threshold. The
+helper calls the path-change hook once after the array assignment, then returns
+the generated noise as a separate float array.
+
+`paint_blobs(world, terrain, count, radius=(5, 15))` overlays ellipses on existing
+terrain and returns None. Terrain accepts a registered name or integer id. For
+each blob, world.rng.uniform draws the center x within [0,width), center y within
+[0,height), then independent horizontal and vertical radii from the supplied
+radius interval. Count is a nonnegative integer. Radius must contain two finite
+bounds satisfying `0 < low <= high`; equal bounds give fixed radii.
+
+The ellipse test uses cell centers `(x+0.5, y+0.5)` and includes its boundary:
+`((x+0.5-cx)/rx)**2 + ((y+0.5-cy)/ry)**2 <= 1`. Only matching cells change.
+Ellipses at world edges are clipped without wrapping. A very small ellipse may
+hit no cell centers; it still consumes its four draws. The batch sends one
+path-change notification after all blobs, including when it painted identical
+values. Invalid arguments fail before allocation/draws. Zero count or a zero-size
+world is a no-op after validation: no layer allocation, draws or notification.
+
+```python
+import numpy as np
+from simworld import World
+from simworld.worldgen import terrain_from_noise, paint_blobs
+
+world = World(20, 12, seed=73)
+world.define_terrain("water", 0, move_cost=4)
+world.define_terrain("mud", 1, move_cost=2)
+world.define_terrain("ground", 2, fertility=1)
+noise = terrain_from_noise(world, [("water", 0.3), ("ground", 1.0)], scale=5)
+assert noise.shape == (12, 20)
+assert set(np.unique(world.layers["terrain"].data)) <= {0, 2}
+paint_blobs(world, "mud", count=4, radius=(1, 3))
+assert set(np.unique(world.layers["terrain"].data)) <= {0, 1, 2}
+assert 1 in world.layers["terrain"].data
+```
+
+Repeating the same calls with equal seeds and parameters reproduces the noise,
+terrain ids and subsequent RNG state. Each positive blob on a nonempty grid uses
+four uniform draws in the order above. Terrain/Position data and the spatial
+index remain separate: painting terrain changes cell metadata used by future
+movement/pathfinding behavior; it does not move entities.
+
+## Sampling spawn positions
+
+`random_positions(world, n, *, passable_only=True, area=None)` in
+simworld.worldgen returns a list of n `(x, y)` pairs. Both coordinates are Python
+floats, suitable for Position and later serialization. The helper uses world.rng;
+each candidate draws x and then y uniformly in the chosen rectangle. Count must
+be a nonnegative integer; NumPy integers are supported. Zero returns an empty
+list immediately, without inspecting area, allocating layers or drawing values.
+
+Area defaults to `(0, 0, world.width, world.height)`. An explicit area is
+`(x_min, y_min, x_max, y_max)`, with lower bounds included and upper bounds excluded.
+Bounds must be finite, increasing and entirely inside the world; invalid bounds
+raise ValueError before randomness or terrain allocation. Positive requests in
+an empty world also fail this validation. This explicit rectangle convention
+resolves a detail left unspecified by the blueprint.
+
+Passable_only defaults to True. Each in-bounds candidate is accepted only if
+world.terrains.passable_at reports True. This read can lazily allocate the
+default terrain plane, using the smallest defined terrain id or zero with no
+definitions. Undefined cell ids follow the registry's passable=True fallback.
+Set passable_only=False to sample without terrain queries or allocation.
+An unlikely draw rounded to an upper bound is rejected before terrain lookup,
+so every returned point is strictly inside the requested half-open rectangle.
+
+The request shares a budget of `1000 * max(n, 1)` candidate pairs. Accepted and
+rejected candidates both count. If too few positions are found after that many
+attempts, RuntimeError reports the requested count, attempts and accepted count.
+The RNG retains all consumed draws and the partial list is not returned. This
+keeps fully blocked or nearly blocked regions from looping indefinitely.
+
+```python
+from simworld import Position, World
+from simworld.worldgen import random_positions
+
+world = World(8, 4, seed=73)
+world.define_terrain("ground", 1)
+world.define_terrain("rock", 3, passable=False)
+world.fill_terrain("ground")
+world.set_terrain(2, 1, "rock")
+positions = random_positions(world, 5, area=(1.0, 0.5, 6.0, 3.5))
+assert len(positions) == 5
+for x, y in positions:
+    assert type(x) is float and type(y) is float
+    assert 1.0 <= x < 6.0 and 0.5 <= y < 3.5
+    assert world.terrains.passable_at(x, y)
+    world.spawn(Position(x, y))
+assert world.count(Position) == 5
+```
+
+Sampling returns locations; spawn creates the entities as shown above. Sampling
+allows repeated locations and cells and does not reserve space or avoid existing
+entities. It preserves existing terrain data. Equal seeds and identical terrain,
+parameters and prior RNG calls reproduce both the positions and subsequent RNG
+state. Occupancy avoidance and spacing constraints are application behavior.
+
+## Headless RGB and ASCII rendering
+
+Import render_rgb and render_ascii from `simworld.render`. They render the current
+World using NumPy and ordinary Python, without a window or optional graphics
+library. They do not advance time, draw randomness, allocate missing terrain or
+modify grid/component data. RGB output is a new array; changing it does not edit
+the World. PNG encoding/saving arrives in Step 041.
+
+`render_rgb(world, *, fields=None, scale=1, entities=True, entity_color=None,
+field_alpha=0.6)` returns uint8 data with shape `(height*scale, width*scale, 3)`.
+The last axis is red, green, blue. It composes in this order:
+
+1. Terrain colors: ids index a color lookup table. Missing terrain planes and
+   undefined ids, including negative raw ids, use dark gray `(40,40,40)`.
+2. Colored scalar field layers: every kind="field" layer with color metadata is
+   blended over the current image. Other layers are ignored.
+3. Visible Position entities: each covers one cell using an entity callback,
+   Appearance.color, or white `(255,255,255)` if Appearance is absent.
+4. Channels are clipped to [0,255], converted to uint8 by truncation, and each
+   cell is repeated scale times along both axes.
+
+For a field, alpha is `clip(value / (layer.max or layer.data.max()), 0, 1)`
+multiplied by field_alpha. The blend is `old*(1-alpha) + color*alpha`. A zero
+denominator or empty grid is transparent, avoiding division by zero. A zero
+metadata max falls back to the data maximum. Field metadata minima do not affect
+normalization. Colored vector/matrix fields raise ValueError because this engine
+view expects scalar overlays; the later editor viewport has its own rendering.
+
+Fields=None selects layers in their insertion order, so later overlays appear
+on top. An explicit iterable of layer names selects and orders the overlays;
+a single name string is supported and an empty iterable hides all fields.
+Explicit names still require colored field layers to contribute; missing names
+raise UnknownLayerError. Scale must be a positive integer and field_alpha finite
+in [0,1], otherwise TypeError/ValueError reports invalid arguments.
+
+Entity coordinates are floored into cells; outside entities are skipped. An
+entity_color callback receives `(world, entity)` and overrides Appearance colors.
+It runs only for visible entities while entities=True. Position-store insertion
+order determines overlap: the last entity drawn at a cell wins. Markers occupy
+exactly scale-by-scale pixels, independent of Appearance.size. Entities=False
+hides them. Rendering reads current Positions directly and requires no spatial
+sync after manual movement.
+
+`render_ascii(world, max_width=100, entities=True)` returns a newline-separated
+string without a trailing newline. Defined terrain uses the first character of
+its nonempty char property, otherwise the first letter of its name (case
+preserved). An empty name falls back to "?". Missing terrain planes use ".";
+undefined ids use "?". Entities appear as "o" over the terrain.
+
+Max_width is a positive integer. The renderer samples terrain every
+`ceil(world.width / max_width)` cells along both axes, with minimum stride one,
+keeping the output width within the limit and preserving square-cell proportions.
+Each visible entity marks its corresponding output bin even if its original cell
+was not sampled. Fields are represented only by RGB overlays. A world with either
+dimension zero produces an empty ASCII string and a correctly shaped empty RGB
+array.
+
+```python
+import numpy as np
+from simworld import Appearance, Position, World
+from simworld.render import render_rgb, render_ascii
+
+world = World(3, 2)
+world.define_terrain("ground", 1, color=(80, 120, 60), char=".")
+world.define_terrain("water", 2, color=(20, 60, 140), char="~")
+world.fill_terrain("ground")
+world.set_terrain(2, 0, "water")
+world.define_field("food", max=10, color=(200, 180, 40)).set(0, 1, 5)
+world.spawn(Position(1.2, 1.2), Appearance(color=(250, 240, 120)))
+
+rgb = render_rgb(world, scale=2)
+assert rgb.shape == (4, 6, 3) and rgb.dtype == np.uint8
+assert rgb[0, 4].tolist() == [20, 60, 140]
+assert rgb[2, 2].tolist() == [250, 240, 120]
+assert render_ascii(world) == "..~\n.o."
+```
+
+These fallback, downsampling and scalar-overlay rules resolve details left terse
+in §5.19. The headless engine renderer is separate from the future editor
+viewport. Root exports are consolidated in the later public-API delivery work;
+the module imports above are available now.
 
 ## World state and ownership
 
@@ -1741,7 +1948,8 @@ Use a focused file when changing one subsystem:
 | [test_world_grid.py](../tests/test_world_grid.py) | World-owned grids, layer/field allocation and replacement, regrowth prerequisites, terrain painting and change hooks |
 | [test_spatial.py](../tests/test_spatial.py) | Bucket moves/removal, Position synchronization, circle boundaries, deterministic ties and radius results against brute force |
 | [test_world_spatial.py](../tests/test_world_spatial.py) | Immediate/deferred spatial lifecycle, nearby inputs/filters, sync priorities and results against full scans |
-| [test_worldgen.py](../tests/test_worldgen.py) | Seeded noise shape/range, interpolation and octave weights, constant/empty grids, validation and explicit RNG ownership |
+| [test_worldgen.py](../tests/test_worldgen.py) | Seeded noise/painting, spawn-area and passability bounds, exact sampling budgets, RNG ownership, validation and notifications |
+| [test_render.py](../tests/test_render.py) | Exact RGB colors/blends, terrain fallbacks, entity markers/scaling, ASCII symbols/width and rendering ownership |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
 | [test_systems.py](../tests/test_systems.py) | Registration context, ordering, cache, gating and profiling |
 | [test_commands.py](../tests/test_commands.py) | Reservations, ordered mutation, callback rounds and bounds, stale skips, strict mode and exception propagation |
@@ -1837,7 +2045,7 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations, World grid/spatial APIs and seeded value noise through Step 037. The following
+The implementation contains the ECS foundations, World grid/spatial APIs, generation helpers and RGB/ASCII rendering through Step 040. The following
 boundaries are part of the current API behavior:
 
 | Area | Current state | Planned work |
@@ -1848,8 +2056,8 @@ boundaries are part of the current API behavior:
 | Layers | Allocation, access, arithmetic, sampling, evolution and World layer/field definitions | Steps 027–031/034 complete; field update scheduling is Phase 4 |
 | Terrain | Registry, lazy grid creation, lookups, property grids, masks and World mutation APIs | Steps 032–034 complete; path-cache hook connected in Step 076 |
 | Spatial queries | World-owned SpatialHash, lifecycle updates, nearby filters and scheduled synchronization | Steps 035–036 complete |
-| World generation | Seeded, normalized value_noise | Step 037 complete; terrain painting/spawn sampling are Steps 038–039 |
-| Rendering | Not implemented | Later Phase 2 steps |
+| World generation | Seeded value_noise, terrain painting and bounded passable-position sampling | Steps 037–039 complete |
+| Rendering | RGB terrain/field/entity composition and ASCII maps | Step 040 complete; PNG encoding/saving is Step 041 |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |
 | Full world persistence, plugins, configuration loading | Not implemented; component and allocator conversion already exist | Phase 5 |

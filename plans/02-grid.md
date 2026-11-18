@@ -6,7 +6,7 @@ Steps **027–043** (17 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§5.5
 
 **Phase exit gate:** Grid operations, mass conservation, terrain semantics, spatial comparisons and valid PNG output pass.
 
-Steps 027–037 are complete; Steps 038–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 027–040 are complete; Steps 041–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
 
 ### Step 027 — Allocate typed grid layers
 
@@ -76,19 +76,19 @@ Steps 027–037 are complete; Steps 038–043 are unstarted. Check a box only af
 
 ### Step 038 — Paint procedural terrain
 
-- [ ] **Change:** Add terrain_from_noise and paint_blobs using world.rng and path-change notification.
+- [x] **Change:** Add terrain_from_noise and paint_blobs using world.rng and path-change notification.
 - **Verify:** Every cell receives a defined band including extrema; repeated seeds reproduce terrain and subsequent RNG state.
 - **Blueprint:** §5.18.
 
 ### Step 039 — Sample valid spawn positions
 
-- [ ] **Change:** Add random_positions area bounds, passability filtering, Python float outputs and bounded rejection attempts.
+- [x] **Change:** Add random_positions area bounds, passability filtering, Python float outputs and bounded rejection attempts.
 - **Verify:** Positions stay in the chosen area; blocked regions fail after the documented attempt budget; same seed repeats positions.
 - **Blueprint:** §5.18.
 
 ### Step 040 — Compose engine RGB and ASCII output
 
-- [ ] **Change:** Add terrain/field blending, entity squares, scaling and ASCII symbols in render.py.
+- [x] **Change:** Add terrain/field blending, entity squares, scaling and ASCII symbols in render.py.
 - **Verify:** Rectangular output shape/dtype, field opacity, Appearance fallback and entity toggles match hand-built worlds.
 - **Blueprint:** §5.19.
 

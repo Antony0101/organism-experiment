@@ -9,7 +9,7 @@ examples, API behavior, internal data flow, and current implementation limits.
 
 ## Current status
 
-Steps 001–037 are complete and **the Phase 0 and Phase 1 gates have passed**.
+Steps 001–040 are complete and **the Phase 0 and Phase 1 gates have passed**.
 Editable installation, headless ECS behavior and the accumulated suite are verified.
 The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
 The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
@@ -60,8 +60,14 @@ lifecycle methods and provides `nearby` with component filters and optional
 distances. `sync_spatial` refreshes direct position edits; core systems perform
 that refresh during sense (-100) and late (100).
 `simworld.worldgen.value_noise` generates normalized float grids using an explicit
-RNG, interpolated octaves and reproducible seeds. Phase 2 is in progress.
-**Step 038 — Paint procedural terrain** in
+RNG, interpolated octaves and reproducible seeds. `terrain_from_noise` maps these
+values to defined terrain bands; `paint_blobs` overlays random ellipses. Both
+painting helpers use world.rng and notify the path-change hook after painting.
+`random_positions` samples Python float coordinates inside the world or a bounded
+area, filtering blocked terrain by default and using a fixed rejection budget.
+`simworld.render` provides `render_rgb` for terrain/field/entity image arrays and
+`render_ascii` for compact text maps. Phase 2 is in progress.
+**Step 041 — Encode dependency-free PNGs** in
 [Phase 2](plans/02-grid.md) is next.
 
 Built-in modules and the editor arrive later.
@@ -177,4 +183,5 @@ Steps 028–030 add cell access, bounded arithmetic, sampling and neighborhoods.
 Step 031 adds diffusion and decay; Step 032 adds terrain identities; Step 033 adds
 terrain lookup grids; Step 034 adds World grid APIs; Step 035 adds the standalone
 spatial hash; Step 036 connects it to World; Step 037 adds seeded value noise.
-Procedural terrain painting is next.
+Step 038 adds procedural terrain painting; Step 039 adds valid spawn-position
+sampling. Step 040 adds engine RGB/ASCII rendering. PNG encoding is next.
