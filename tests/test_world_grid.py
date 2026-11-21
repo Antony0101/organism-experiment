@@ -128,6 +128,62 @@ def test_field_replacement_uses_the_same_duplicate_policy_as_other_layers():
     np.testing.assert_array_equal(updated.data, [[3, 3]])
 
 
+def test_field_replacement_replaces_metadata_and_data_without_changing_old_references():
+    world = World(5, 2, modules=())
+    world.define_terrain("ground", 1, fertility=1)
+    old = world.define_field("food", initial=2, min=1, max=8, decay=0.1, diffusion=0.2,
+                             regrow=0.3, regrow_by="fertility", diffuse_on=["ground"],
+                             color=(10, 20, 30), tooltip="old", units="old units")
+    world.define_layer("after")
+    old_view = old.window(0, 0, radius=0)[0]
+    old_view[:] = 6
+    new = world.define_field("food", initial=3, min=0, max=12, decay=0.4, diffusion=0.1,
+                             regrow=0.05, regrow_by="fertility", diffuse_on=["ground"],
+                             color=(40, 50, 60), tooltip="new", units="new units", replace=True)
+    assert list(world.layers) == ["food", "after"]
+    assert world.layers["food"] is new and new is not old
+    assert new.data.shape == (2, 5) and new.data.dtype == np.dtype(float)
+    np.testing.assert_array_equal(new.data, np.full((2, 5), 3.0))
+    assert (new.default, new.min, new.max, new.decay_rate, new.diffusion_rate) == (3, 0, 12, 0.4, 0.1)
+    assert new.kind == "field" and new.color == (40, 50, 60) and new.tooltip == "new"
+    assert new.props == {"regrow": 0.05, "regrow_by": "fertility",
+                         "diffuse_on": ["ground"], "units": "new units"}
+    assert old_view[0, 0] == old.get(0, 0) == 6
+    assert old.max == 8 and old.props["units"] == "old units"
+    old_view[:] = 7
+    assert new.get(0, 0) == 3
+
+
+def test_terrain_redefinition_and_removal_refresh_grids_preserving_painted_metadata():
+    world = World(5, 2, modules=())
+    world.define_terrain("ground", 1, fertility=0.5)
+    world.define_terrain("mud", 3, move_cost=2, fertility=1.5)
+    layer = world.define_layer("terrain", dtype=np.int16, default=3, kind="terrain",
+                               tooltip="Hand-painted ids", units="terrain ids")
+    world.fill_terrain("ground")
+    world.set_terrain(3.8, 1.2, "mud")
+    data, painted = layer.data, layer.data.copy()
+    assert world.terrains.prop_grid("fertility", -1)[1, 3] == 1.5
+    world.define_terrain("mud", 3, move_cost=4, passable=False, color=(10, 20, 30), fertility=2)
+    assert world.terrain_at(3, 1).color == (10, 20, 30)
+    assert world.terrains.prop_grid("fertility", -1)[1, 3] == 2
+    assert world.terrains.move_cost_grid()[1, 3] == 4
+    assert not world.terrains.passable_grid()[1, 3]
+    world.terrains.undefine("mud")
+    with pytest.raises(UnknownTerrainError):
+        world.terrain_at(3, 1)
+    assert world.terrains.prop_grid("fertility", -1)[1, 3] == -1
+    assert world.terrains.move_cost_grid()[1, 3] == 1
+    assert world.terrains.passable_grid()[1, 3]
+    world.define_terrain("mud", 3, move_cost=0.5, fertility=3)
+    assert world.terrains.prop_grid("fertility", -1)[1, 3] == 3
+    np.testing.assert_array_equal(layer.data, painted)
+    assert world.terrains.layer is layer and layer.data is data
+    assert layer.default == 3 and layer.dtype == np.dtype(np.int16)
+    assert layer.kind == "terrain" and layer.tooltip == "Hand-painted ids"
+    assert layer.props == {"units": "terrain ids"}
+
+
 def test_world_terrain_wrappers_lookup_and_paint_floored_xy_coordinates():
     world = World(4, 3)
     ground = world.define_terrain("ground", 1, color=(1, 2, 3), fertility=0.5)

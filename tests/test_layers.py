@@ -1,11 +1,47 @@
 """Layer allocation, metadata and named layer lookup contracts."""
 
+from math import log
+
 import numpy as np
 import pytest
 
-from simworld import Position
+from simworld import Position, World
 from simworld.errors import OutOfBoundsError, SimWorldError, UnknownLayerError
 from simworld.layers import Layer, LayerStore
+
+
+def test_world_field_evolution_respects_terrain_mask_metadata_and_explicit_scheduling():
+    world = World(5, 3, modules=())
+    world.define_terrain("ground", 1, fertility=1)
+    world.define_terrain("rock", 3, passable=False, fertility=0)
+    world.fill_terrain("ground")
+    for y in range(3):
+        world.set_terrain(2, y, "rock")
+    field = world.define_field(
+        "food", min=0, max=20, decay=log(2), diffusion=0.25,
+        regrow=0.1, regrow_by="fertility", diffuse_on=["ground"],
+        color=(20, 100, 40), tooltip="Available food", units="grams",
+    )
+    field.set(0, 1, 8)
+    field.set(4, 1, 4)
+    field.data[:, 2] = 7
+    data = field.data
+    field.decay(dt=1)
+    assert field.total() == pytest.approx(16.5)
+    field.diffuse(field.diffusion_rate, world.terrains.mask(field.props["diffuse_on"]))
+    expected = [[1, 0, 3.5, 0, 0.5], [1, 1, 3.5, 0.5, 0.5], [1, 0, 3.5, 0, 0.5]]
+    np.testing.assert_allclose(field.data, expected)
+    assert field.total() == pytest.approx(16.5)
+    assert field.data[:, :2].sum() == pytest.approx(4)
+    assert field.data[:, 3:].sum() == pytest.approx(2)
+    world.step()  # Core spatial systems do not evolve field metadata automatically.
+    np.testing.assert_allclose(field.data, expected)
+    assert world.layers["food"] is field and field.data is data
+    assert (field.min, field.max, field.decay_rate, field.diffusion_rate) == (0, 20, log(2), 0.25)
+    assert field.kind == "field" and field.color == (20, 100, 40)
+    assert field.tooltip == "Available food" and field.shape == ()
+    assert field.props == {"regrow": 0.1, "regrow_by": "fertility",
+                           "diffuse_on": ["ground"], "units": "grams"}
 
 
 def test_default_scalar_layer_uses_height_then_width_and_zero_fill():

@@ -1,108 +1,63 @@
 # simworld
 
-A general-purpose 2D simulation engine and scene editor, being built incrementally
-from [BLUEPRINT.md](BLUEPRINT.md).
+A Python engine for experimenting with 2D simulations. Create entities, attach
+components that hold their data, and write systems that update them over time.
+NumPy grids represent terrain and fields such as food or heat. The engine can
+render a world as text or save a PNG without opening a window.
 
-For a detailed explanation of the implemented engine, read the
-[developer guide](docs/developer-guide.md). It covers architecture, runnable
-examples, API behavior, internal data flow, and current implementation limits.
+The project is being built incrementally from [BLUEPRINT.md](BLUEPRINT.md), with
+a scene editor planned for later phases.
 
-## Current status
+## Project status
 
-Steps 001–040 are complete and **the Phase 0 and Phase 1 gates have passed**.
-Editable installation, headless ECS behavior and the accumulated suite are verified.
-The [ECS contracts](docs/ecs-contracts.md) record the behavior later phases must preserve.
-The engine error hierarchy, `component`, `prop`, `COMPONENTS`, `Position` and
-`Appearance` are available through `simworld`; `Parent` and registry metadata
-live in their respective modules. Entity allocation and stale-id checks live in
-`simworld.ecs`, along with LIFO undo and allocator serialization. ID decoding
-helpers are exported through `simworld`. `World` and `WorldSettings` provide
-configuration, seeded randomness, resources and entity storage. World supports
-`spawn`, `despawn` and `is_alive`, with optional unique names at creation.
-Component access and mutation use `add`, `remove`, `get`, `try_get`, `has` and
-`components_of`. `query` iterates matching entities, `count` counts matches and
-`entities` lists all live ids, including entities without components. `set_name`,
-`entity` and `name_of` manage and look up unique entity names. `define_prefab`
-and `spawn_prefab` provide validated templates with independent component data.
-`@system` describes functions for explicit registration with `World.register`
-or automatic registration inside `simworld.registry.loading_into(world)`.
-`world.scheduler` orders and executes systems at the current tick, with enabled
-flags, every-N gating and optional profiling. `world.step()` advances the clock
-after a successful pass; `world.run(steps, dt=None, callback=None)` repeats steps.
-`@world.system(...)` registers directly; enable/disable methods control execution.
-`world.commands` queues spawn/prefab, despawn, add/remove and callback operations.
-Spawned ids are reserved immediately; components and names attach on `apply()`.
-Application drains callback-generated work in bounded rounds. Stale operations
-are skipped and counted in `world.commands.skipped`; setting
-`world.commands.strict = True` raises instead. Other exceptions propagate.
-The scheduler flushes commands after each system and at stage boundaries.
-A step-level dt override is temporary, and a run callback returning False stops it.
-`simworld.layers` provides standalone `Layer` and `LayerStore` allocation with
-scalar/vector cell shapes, dtype/default metadata and useful missing-name errors.
-Layers support floored coordinate get/set, out-of-bounds read defaults, float-only
-write clamping and raw NumPy-style bracket indexing. Scalar `add`/`take` report
-actual stored changes, and `fill`/`clamp`/`total`/`mean` operate across the grid.
-Layers also provide bilinear `sample`, centered `gradient`, clipped `window` views
-and row-ordered `neighbours` with optional diagonals. Float layers support
-masked, mass-conserving `diffuse()` and exponential `decay()` in place.
-These evolution methods are called explicitly; World does not yet schedule them.
-`simworld.terrain` provides validated terrain identities, name/id lookup and lazy
-int16 terrain-layer creation, per-cell cost/passability lookups, numeric property
-grids and named masks. Definitions rebuild lookup tables and clear property caches.
-World owns its `layers` and `terrains`, with `define_layer`/`define_field` for
-allocation and validated regrowth metadata. Layer replacement requires
-`replace=True`. `define_terrain`, `terrain_at`, `set_terrain` and `fill_terrain`
-connect terrain definitions and painting to World, including the change hook
-for later path-cache invalidation. `simworld.spatial.SpatialHash` provides standalone
-bucket membership, Position synchronization and radius searches sorted by
-distance and entity id. World owns `spatial`, updates membership through entity
-lifecycle methods and provides `nearby` with component filters and optional
-distances. `sync_spatial` refreshes direct position edits; core systems perform
-that refresh during sense (-100) and late (100).
-`simworld.worldgen.value_noise` generates normalized float grids using an explicit
-RNG, interpolated octaves and reproducible seeds. `terrain_from_noise` maps these
-values to defined terrain bands; `paint_blobs` overlays random ellipses. Both
-painting helpers use world.rng and notify the path-change hook after painting.
-`random_positions` samples Python float coordinates inside the world or a bounded
-area, filtering blocked terrain by default and using a fixed rejection budget.
-`simworld.render` provides `render_rgb` for terrain/field/entity image arrays and
-`render_ascii` for compact text maps. Phase 2 is in progress.
-**Step 041 — Encode dependency-free PNGs** in
-[Phase 2](plans/02-grid.md) is next.
+**Steps 001–043 of 194 are complete. The Phase 0, Phase 1 and Phase 2 gates have
+passed.** The current engine supports entities, components, scheduling, deferred
+commands, grids, terrain, spatial queries, seeded world generation and headless
+rendering. The saved [20×20 milestone PNG](docs/artifacts/phase-2-grid.png) was
+validated and visually inspected.
 
-Built-in modules and the editor arrive later.
-The declared `simworld-editor` entry point targets a future module and cannot
-launch yet. The current import example is:
+Queued events, actions and brains are next. Built-in simulation modules,
+pathfinding, complete world persistence, plugins and the editor are still
+planned. The declared `simworld-editor` entry point cannot launch yet. Worlds
+currently use `modules=()`; installing simulation modules is not implemented.
 
-<!-- run -->
-```python
-import simworld
-```
+## Contents
 
-## Development setup
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Define your own components](#define-your-own-components)
+- [Generate terrain and save an image](#generate-terrain-and-save-an-image)
+- [Available features](#available-features)
+- [Run the checks](#run-the-checks)
+- [Documentation](#documentation)
+- [Repository layout](#repository-layout)
+- [Development workflow](#development-workflow)
 
-The package declares Python 3.10 or newer. The pinned development environment
-below requires Python 3.12 or newer because NumPy 2.5.4 requires it. Run these
-commands from the repository root using Python with `venv`/`ensurepip` support. Package installation
-requires access to a package index or the corresponding local packages.
+## Installation
 
-For a new checkout without `.venv`, create the environment and install the recorded
-development versions:
+Use **Python 3.12 or newer** for the pinned development environment. From the
+repository root:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-[requirements-dev.txt](requirements-dev.txt) includes `-e .[test]`: it installs this
-checkout in editable mode with its test extra. Python source edits are available
-without reinstalling. If `.venv` already exists from Step 003, use its Python for
-the checks below; activation is optional.
+[requirements-dev.txt](requirements-dev.txt) installs this checkout in editable
+mode with its test extra. Changes under `simworld/` take effect without
+reinstalling. If `.venv` already exists, use its interpreter directly; activation
+is optional. Run the Python examples below with `.venv/bin/python`.
 
-To install using the dependency ranges in `pyproject.toml` instead of the recorded
-pins, use `.venv/bin/python -m pip install -e '.[test]'` in a virtual environment.
+To use the dependency ranges in [pyproject.toml](pyproject.toml) instead of the
+recorded pins, install with:
 
-The current environment was checked on Linux x86_64 with these versions:
+```bash
+.venv/bin/python -m pip install -e '.[test]'
+```
+
+Package metadata declares Python 3.10+ and NumPy 1.22+. The development pins
+require Python 3.12+ because they use NumPy 2.5.4. The recorded Linux x86_64
+environment is:
 
 | Tool or library | Version |
 | --- | --- |
@@ -111,77 +66,189 @@ The current environment was checked on Linux x86_64 with these versions:
 | pytest | 9.2.0 |
 | pip | 24.0 |
 
-These are local observations, not the blueprint's reference environment.
-The requirements file pins installed packages; Python itself and isolated build
-dependencies are not locked by it. Fresh-environment recreation from these pins
-has not yet been verified. Seeded simulation comparisons will require matching
-Python/NumPy versions once simulation is implemented.
+These describe the existing environment. Fresh-environment recreation from the
+pins has not yet been verified. The requirements do not lock Python itself or
+isolated build dependencies. Use matching Python/NumPy versions and the same RNG
+call order when comparing seeded results.
 
-## Verification
+## Quick start
 
-Run all current tests and check dependency consistency:
+Create an entity and a system that moves it each step:
+
+<!-- run -->
+```python
+from simworld import Position, World
+
+world = World(width=20, height=10, seed=7, dt=0.5)
+walker = world.spawn(Position(2, 3), name="walker")
+
+@world.system(stage="act")
+def move(world):
+    for entity, position in world.query(Position):
+        position.x += 2 * world.dt
+
+world.run(steps=4)
+position = world.get(walker, Position)
+print(f"Position: ({position.x}, {position.y}); tick: {world.tick}")
+assert (position.x, position.y) == (6, 3)
+assert world.tick == 4 and world.time == 2.0
+```
+
+An **entity** is an integer identity. A **component**, such as Position, stores
+its data. A **system** is a function that changes that data. The scheduler calls
+the registered system once per step here; four half-second steps move the walker
+four units to the right.
+
+Use `world.step()` for a single step or `world.run(steps)` for several. The world
+advances its clock after a successful scheduled pass. Systems use the stages
+`input`, `sense`, `decide`, `act`, `update` and `late`, in that order.
+
+## Define your own components
+
+Use `@component` to register a data class. `prop` adds field metadata, such as a
+tooltip, for reflection and future tools:
+
+<!-- run -->
+```python
+from simworld import World, component, prop
+
+@component(category="example")
+class DemoEnergy:
+    amount: float = prop(10.0, tooltip="Energy available to this entity.")
+
+world = World()
+entity = world.spawn(DemoEnergy())
+
+@world.system(stage="update")
+def spend_energy(world):
+    for entity, energy in world.query(DemoEnergy):
+        energy.amount -= 1
+
+world.run(steps=3)
+assert world.get(entity, DemoEnergy).amount == 7
+```
+
+Queries return an entity id followed by its requested components. Components can
+also be found by their registered names. Use `world.commands` to queue structural
+changes during a system; the scheduler applies them after each system and at
+stage boundaries. See the developer guide for registration, ownership and stale
+entity behavior.
+
+## Generate terrain and save an image
+
+This independent example paints water blobs, spreads a food field, places
+entities on passable terrain and writes a **160×96** PNG named `world.png` in the
+current directory:
+
+<!-- run -->
+```python
+from simworld import Appearance, Position, World
+from simworld.render import save_frame
+from simworld.worldgen import paint_blobs, random_positions
+
+world = World(width=20, height=12, seed=7, modules=())
+world.define_terrain("ground", 1, color=(60, 110, 50), char=".")
+world.define_terrain("water", 2, passable=False, color=(35, 90, 185), char="~")
+world.fill_terrain("ground")
+paint_blobs(world, "water", count=3, radius=(1, 3))
+
+food = world.define_field("food", max=10, diffusion=0.2, color=(240, 210, 40))
+food.set(15, 3, 10)
+food.diffuse(food.diffusion_rate, mask=world.terrains.mask("ground"))
+for x, y in random_positions(world, 5):
+    world.spawn(Position(x, y), Appearance(color=(255, 255, 255)))
+
+path = save_frame(world, "world.png", scale=8)
+assert path.is_file()
+```
+
+World coordinates use **`(x, y)`**; raw layer arrays use **`data[y, x]`**. The
+rendered origin is at the top left, with y increasing downward. Field evolution
+is explicit: defining decay, diffusion or regrowth metadata does not install an
+automatic update system yet. PNG output needs only stdlib and NumPy, without
+Pillow, pygame or Dear PyGui.
+
+## Available features
+
+| Area | Implemented behavior |
+| --- | --- |
+| Entities and components | Generation-checked ids, spawn/despawn, component registration/reflection/serialization, access and mutation, queries/counts, names and prefab templates |
+| Scheduling | System registration, ordered stages, enable/disable flags, every-N execution, profiling, World step/run loops and deferred structural commands |
+| Layers | Typed scalar/vector grids, bounds and clamping, add/take, reductions, bilinear sampling, gradients, window views, neighborhoods, masked diffusion and decay |
+| Terrain | Name/id definitions, painting, costs/passability, numeric property grids, masks and metadata refresh |
+| Spatial queries | Bucket indexing, nearby queries with component filters/distances, lifecycle updates and scheduled Position synchronization |
+| World generation | Seeded value noise, terrain bands, ellipse painting and bounded passable-position sampling |
+| Rendering | RGB arrays, ASCII maps, field overlays, entity markers, scaling and PNG encoding/file output |
+
+Import World, Position, Appearance, component, prop and system from `simworld`.
+Other types and helpers currently live in their own modules, such as
+`simworld.layers`, `simworld.terrain`, `simworld.worldgen` and `simworld.render`.
+The developer guide records the exact current API and its limits.
+
+## Run the checks
+
+Run the accumulated tests and check installed dependencies:
 
 ```bash
-.venv/bin/python -m pytest tests
+.venv/bin/python -m pytest tests -q -o addopts=''
 .venv/bin/python -m pip --no-cache-dir check
 ```
 
-For only the executable documentation checks:
+To check only this README's examples:
 
 ```bash
 .venv/bin/python -m pytest tests/test_readme.py
 ```
 
-README Python blocks marked with `<!-- run -->` run independently in temporary
-directories with fresh namespaces. `clean_components` restores global component
-registrations in the shared `COMPONENTS` registry, including decorated component
-classes replaced by reloads. The complete `world` fixture is deferred to Step 071,
-after built-ins.
+Python blocks marked with `<!-- run -->` execute independently in temporary
+directories. The `clean_components` fixture restores process-global component
+registrations between examples. The complete built-in `world` fixture is planned
+for Step 071.
 
-## Package boundaries
+## Documentation
 
-- `simworld/`: engine and public API; runtime dependencies are Python's standard
-  library and NumPy. Core code must not import the editor, Dear PyGui or pygame.
-- `simworld/modules/`: optional simulation behavior, built on engine APIs.
-- `simworld/editor/`: headless editor models built on the same engine. Dear PyGui
-  imports belong only in the future `gui_dpg.py` and `gui_panels.py` front-end.
-- `tests/`: fixtures and behavior checks. Optional pygame usage belongs in the
-  future viewer example, rather than the engine or editor models.
+| Document | Use it for |
+| --- | --- |
+| [Developer guide](docs/developer-guide.md) | Architecture, runnable examples, API behavior, internal data flow and implementation limits |
+| [ECS contracts](docs/ecs-contracts.md) | Entity ids, component data, ordering, scheduling and later integration requirements |
+| [Grid contracts](docs/grid-contracts.md) | Coordinates, field evolution, terrain edits, spatial synchronization and the reproducible PNG milestone |
+| [Implementation plan](plans/README.md) | The 194-step sequence, phase gates and execution rules |
+| [Progress log](plans/progress.md) | Completed work, exact verification results and deferred checks |
+| [Blueprint](BLUEPRINT.md) | The intended complete engine and editor; some described features are still planned |
 
-Packaging declares `test`, `editor` and `viewer` extras. Only the test extra is
-installed in the recorded environment. GUI dependencies and display/OpenGL
-behavior remain unverified; no cross-platform support claim has been established.
+## Repository layout
 
-## One step at a time
+```text
+simworld/         Engine implementation and public API
+  modules/        Package reserved for built-in simulation modules
+  editor/         Package reserved for the headless editor and GUI
+tests/            Fixtures, behavior checks and executable README examples
+docs/             Developer guide, contracts and milestone artifacts
+plans/            Sequential implementation steps and progress evidence
+BLUEPRINT.md      Specification for the intended complete project
+pyproject.toml    Package metadata, dependencies, extras and pytest configuration
+```
 
-1. Read the next unchecked step in [the implementation plan](plans/README.md), its
-   cited blueprint sections and [the progress log](plans/progress.md). Check git
-   status and applicable repository guidance before editing; preserve existing
-   work.
-2. Implement only that numbered step. For new behavior, write a focused failing
-   test, implement the smallest working change and review/refactor the patch.
-   Documentation and setup steps use their stated direct checks.
-3. Run the step's checks and relevant regressions. At a phase boundary, run the
-   full accumulated suite and satisfy that phase's exit gate before advancing.
-4. Record changed files, exact commands, observed results, skips and deviations
-   in the progress log. Check a step only after its acceptance checks pass.
-5. Report the result and next step, then stop. Continue when another step is
-   requested; if several are explicitly requested, finish and verify each in
-   sequence. Keep roadmap suggestions separate from the specified rebuild.
+The core runtime uses stdlib and NumPy. It must remain independent of the editor,
+Dear PyGui and pygame. Packaging declares `test`, `editor` and `viewer` extras;
+only the test extra is installed in the recorded environment. Editor/viewer
+execution and cross-platform GUI support remain future verification work.
 
-No commit, push or publication is required by this workflow. Work not exercised
-must remain listed as unverified. Steps 010–012 add component metadata,
-serialization and the core component types. Step 013 adds entity allocation;
-Step 015 adds minimal World state and Step 016 adds entity creation/deletion;
-Step 017 adds component access and mutation; Step 018 adds queries and counts.
-Step 019 adds entity naming and Step 020 adds prefab templates/overrides.
-Steps 021–022 add system registration/context and stage scheduling. Steps 023–024
-add deferred structural commands and stale-target handling. Step 025 connects
-World run loops and automatic command flushing. Step 026 verifies the Phase 1
-milestone and documents its contracts. Step 027 adds typed grid allocation;
-Steps 028–030 add cell access, bounded arithmetic, sampling and neighborhoods.
-Step 031 adds diffusion and decay; Step 032 adds terrain identities; Step 033 adds
-terrain lookup grids; Step 034 adds World grid APIs; Step 035 adds the standalone
-spatial hash; Step 036 connects it to World; Step 037 adds seeded value noise.
-Step 038 adds procedural terrain painting; Step 039 adds valid spawn-position
-sampling. Step 040 adds engine RGB/ASCII rendering. PNG encoding is next.
+## Development workflow
+
+Work follows one numbered step at a time. **Step 044 — Define queued events and
+handlers** in [Phase 3](plans/03-behavior.md) is next.
+
+1. Read the next unchecked step, its blueprint sections and the progress log.
+   Inspect repository guidance and git status, preserving existing work.
+2. For new behavior, write a focused failing test, implement the scoped change
+   and review/refactor it. Documentation and verification tasks use direct checks.
+3. Run the step's acceptance checks and relevant regressions. Complete the full
+   suite and stated exit gate at each phase boundary.
+4. Record actual results, changed files and any skipped checks in the progress
+   log, then check off the completed step.
+5. Report the result and stop at that boundary. Continue with another step when
+   requested.
+
+The workflow does not require committing, pushing or publishing. The plan keeps
+later features separate from the behavior currently available in this checkout.

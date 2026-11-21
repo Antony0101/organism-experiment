@@ -10,6 +10,7 @@ from simworld.errors import (
     MissingComponentError, NotAComponentError, StaleEntityError, UnknownComponentError,
 )
 from simworld.spatial import SpatialHash
+from simworld.worldgen import paint_blobs, random_positions
 
 
 def test_world_owns_independent_indexes_using_configured_cell_size():
@@ -222,3 +223,48 @@ def test_world_nearby_matches_full_scan_through_lifecycle_changes(cell_size):
                 assert [e for _, e in actual] == [e for _, e in expected]
                 np.testing.assert_allclose([d for d, _ in actual], [d for d, _ in expected],
                                            rtol=1e-14, atol=1e-14)
+
+
+def test_generated_world_spatial_queries_match_full_scan_after_scheduled_lifecycle_changes():
+    world = World(12, 7, seed=42, modules=(), cell_size=3)
+    world.define_terrain("ground", 1)
+    world.define_terrain("rock", 3, passable=False)
+    world.fill_terrain("ground")
+    paint_blobs(world, "rock", 3, radius=(1, 2))
+    terrain = world.layers["terrain"].data.copy()
+    for i, (x, y) in enumerate(random_positions(world, 30)):
+        components = [Position(x, y)]
+        if i % 2:
+            components.append(Appearance())
+        world.spawn(*components)
+    world.define_prefab("marker", {"Position": {"x": 6, "y": 3}, "Appearance": {}})
+
+    @world.system(stage="act")
+    def edit(w):
+        for i, entity in enumerate(w.entities()):
+            if i % 7 == 0:
+                w.commands.despawn(entity)
+            elif i % 4 == 0:
+                w.commands.remove(entity, Position)
+            elif i % 3 == 0:
+                w.commands.add(entity, Position((i + 2) % w.width, 2))
+            else:
+                p = w.try_get(entity, Position)
+                if p is not None:
+                    p.x, p.y = (p.x + 4.5) % w.width, (p.y + 0.75) % w.height
+        w.commands.spawn_prefab("marker")
+
+    for phase in range(4):
+        if phase:
+            world.step()  # Commands land between systems; late sync picks up direct moves.
+        for x, y, radius in [(6, 3, 0), (6, 3, 2.5), (0, 0, 20)]:
+            for required in [(), (Appearance,)]:
+                expected = sorted((hypot(p.x - x, p.y - y), e)
+                                  for e, p in world.query(Position)
+                                  if hypot(p.x - x, p.y - y) <= radius and world.has(e, *required))
+                actual = world.nearby((x, y), radius, with_=required, distances=True)
+                assert [e for _, e in actual] == [e for _, e in expected]
+                np.testing.assert_allclose([d for d, _ in actual], [d for d, _ in expected],
+                                           rtol=1e-14, atol=1e-14)
+    assert world.tick == 3
+    np.testing.assert_array_equal(world.layers["terrain"].data, terrain)

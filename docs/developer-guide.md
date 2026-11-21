@@ -1,11 +1,12 @@
 # simworld developer guide
 
 This guide explains how the current engine works and how to extend it. It covers
-package version **0.1.0**, with implementation **Steps 001–040 complete**, as of
-**18 November 2026**. The step number matters: the package version alone does not
-identify which parts of the blueprint have been built. Phase 1 has passed its
-verification gate; the [ECS contracts](ecs-contracts.md) record frozen behavior
-and integration requirements for later phases.
+package version **0.1.0**, with implementation **Steps 001–043 complete**, as of
+**20 November 2026**. The step number matters: the package version alone does not
+identify which parts of the blueprint have been built. Phases 1 and 2 have passed
+their verification gates; the [ECS contracts](ecs-contracts.md) and
+[grid contracts](grid-contracts.md) record behavior and integration requirements
+for later phases.
 
 You can create entities, attach data, query that data, define reusable templates,
 register systems, schedule their execution, and queue structural changes. The
@@ -31,6 +32,7 @@ Python process with this package installed.
 - [Procedural terrain painting](#procedural-terrain-painting)
 - [Sampling spawn positions](#sampling-spawn-positions)
 - [Headless RGB and ASCII rendering](#headless-rgb-and-ascii-rendering)
+- [PNG encoding and saving](#png-encoding-and-saving)
 - [World state and ownership](#world-state-and-ownership)
 - [Entity and component operations](#entity-and-component-operations)
 - [Queries and iteration](#queries-and-iteration)
@@ -140,7 +142,7 @@ its type available everywhere while spawning an entity affects one world.
 | [simworld/layers.py](../simworld/layers.py) | Typed NumPy grid allocation, layer metadata and named layer storage |
 | [simworld/spatial.py](../simworld/spatial.py) | Standalone spatial buckets, membership synchronization and deterministic radius searches |
 | [simworld/worldgen.py](../simworld/worldgen.py) | Seeded value noise, terrain painting and bounded passable-position sampling |
-| [simworld/render.py](../simworld/render.py) | Terrain/field/entity RGB composition and downsampled ASCII maps |
+| [simworld/render.py](../simworld/render.py) | RGB/ASCII composition, PNG byte encoding and frame saving |
 | [simworld/components.py](../simworld/components.py) | Position, Appearance, and Parent data types |
 | [simworld/ecs.py](../simworld/ecs.py) | Entity ids, slot allocation, allocator undo/serialization, command buffer |
 | [simworld/world.py](../simworld/world.py) | World state, grids, spatial lifecycle/nearby queries, entities, prefabs and system registration |
@@ -1222,7 +1224,7 @@ Import render_rgb and render_ascii from `simworld.render`. They render the curre
 World using NumPy and ordinary Python, without a window or optional graphics
 library. They do not advance time, draw randomness, allocate missing terrain or
 modify grid/component data. RGB output is a new array; changing it does not edit
-the World. PNG encoding/saving arrives in Step 041.
+the World. PNG helpers save these pixels as described below.
 
 `render_rgb(world, *, fields=None, scale=1, entities=True, entity_color=None,
 field_alpha=0.6)` returns uint8 data with shape `(height*scale, width*scale, 3)`.
@@ -1297,6 +1299,77 @@ These fallback, downsampling and scalar-overlay rules resolve details left terse
 in §5.19. The headless engine renderer is separate from the future editor
 viewport. Root exports are consolidated in the later public-API delivery work;
 the module imports above are available now.
+
+## PNG encoding and saving
+
+The PNG helpers are available from `simworld.render` and use the Python standard
+library's struct, zlib and pathlib alongside the existing NumPy pixel arrays.
+They do not require Pillow, pygame or Dear PyGui.
+
+| Function | Result |
+| --- | --- |
+| `encode_png(rgb)` | Return PNG bytes without writing a file |
+| `save_png(path, rgb)` | Encode pixels, write the file and return its Path |
+| `save_frame(world, path, **render_options)` | Call render_rgb, then save_png, returning the Path |
+
+Encode_png accepts an array with dtype uint8 and shape `(height,width,3)`.
+It preserves the exact RGB bytes, including for read-only, strided, reversed and
+transposed views; it does not cast float/integer types into uint8 implicitly.
+Wrong shape raises ValueError and wrong dtype raises TypeError. PNG dimensions
+must each be in [1,2147483647], so a zero-size RGB result from an empty World
+cannot be encoded and raises ValueError.
+
+The encoder writes the eight-byte PNG signature followed by three chunks:
+
+- IHDR stores width/height, 8-bit depth and RGB color type 2, with standard
+  compression/filter methods and no interlacing.
+- IDAT contains the zlib-compressed rows. Each row starts with a zero filter
+  byte, followed by that row's RGB bytes in logical left-to-right order.
+- IEND marks the end with an empty payload.
+
+Each chunk contains its big-endian payload length and a CRC32 over the type and
+payload. These choices provide a simple RGB encoder without a palette, alpha,
+adaptive filtering or metadata. Tests independently parse framing, verify every
+CRC and decompress the scanlines to compare all pixels with the original array.
+
+Save_png accepts a string or Path-compatible destination. It completes encoding
+before opening the file, so invalid pixels do not truncate an existing target.
+A valid write replaces the file contents. Parent directories must already exist;
+ordinary filesystem errors propagate. Saving is not an atomic file-replacement
+or recovery mechanism. The blueprint does not specify save-helper argument order
+or return values; this implementation uses the signatures and Path returns above.
+
+Save_frame forwards all render_options directly to render_rgb, including fields,
+scale, entities, entity_color and field_alpha. It neither steps the simulation nor
+changes RNG state. The returned Path identifies the written file, rather than
+the image array or encoded bytes.
+
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from simworld import Appearance, Position, World
+from simworld.render import encode_png, render_rgb, save_frame, save_png
+
+world = World(20, 20)
+world.define_terrain("ground", 1, color=(90, 140, 70))
+world.fill_terrain("ground")
+world.spawn(Position(3, 5), Appearance(color=(255, 240, 120)))
+rgb = render_rgb(world)
+png = encode_png(rgb)
+assert png.startswith(b"\x89PNG\r\n\x1a\n")
+with TemporaryDirectory() as directory:
+    direct = save_png(Path(directory) / "pixels.png", rgb)
+    assert direct.read_bytes() == png
+    frame = save_frame(world, Path(directory) / "frame.png", scale=2)
+    assert frame.is_file()
+assert world.tick == 0
+```
+
+This validates encoding and file output independently of a GUI. Step 042 verifies
+rendered pixels after layer replacement alongside other grid integrations. The
+Phase 2 image milestone passed in Step 043, including a saved and inspected
+[20×20 PNG](artifacts/phase-2-grid.png). Its complete reproduction example and
+coordinate/pathfinding boundaries are in the grid contracts.
 
 ## World state and ownership
 
@@ -1942,14 +2015,14 @@ Use a focused file when changing one subsystem:
 | [test_registry.py](../tests/test_registry.py) | Ordered registration, duplicates, lookup and removal |
 | [test_components.py](../tests/test_components.py) | Component reflection, factories, redefinition and serialization |
 | [test_terrain.py](../tests/test_terrain.py) | Terrain identity/validation, layer preservation, sparse/undefined-id lookups, numeric property caches, masks and invalidation notifications |
-| [test_layers.py](../tests/test_layers.py) | Scalar/vector allocation, dtype/defaults, coordinate access, bounded arithmetic, reductions, interpolation/gradients, windows, diffusion/decay and missing layer lookups |
+| [test_layers.py](../tests/test_layers.py) | Scalar/vector allocation, dtype/defaults, coordinate access, bounded arithmetic, reductions, interpolation/gradients, windows, diffusion/decay, terrain-masked field evolution and missing layer lookups |
 | [test_core_components.py](../tests/test_core_components.py) | Built-in component defaults and metadata |
 | [test_world.py](../tests/test_world.py) | Construction, lifecycle, ownership, queries and naming |
-| [test_world_grid.py](../tests/test_world_grid.py) | World-owned grids, layer/field allocation and replacement, regrowth prerequisites, terrain painting and change hooks |
+| [test_world_grid.py](../tests/test_world_grid.py) | World-owned grids, layer/field allocation and replacement, retained old views, regrowth prerequisites, terrain painting, lookup refresh after redefinition/removal and change hooks |
 | [test_spatial.py](../tests/test_spatial.py) | Bucket moves/removal, Position synchronization, circle boundaries, deterministic ties and radius results against brute force |
-| [test_world_spatial.py](../tests/test_world_spatial.py) | Immediate/deferred spatial lifecycle, nearby inputs/filters, sync priorities and results against full scans |
+| [test_world_spatial.py](../tests/test_world_spatial.py) | Immediate/deferred spatial lifecycle, nearby inputs/filters, sync priorities and results against full scans through scheduled edits in generated worlds |
 | [test_worldgen.py](../tests/test_worldgen.py) | Seeded noise/painting, spawn-area and passability bounds, exact sampling budgets, RNG ownership, validation and notifications |
-| [test_render.py](../tests/test_render.py) | Exact RGB colors/blends, terrain fallbacks, entity markers/scaling, ASCII symbols/width and rendering ownership |
+| [test_render.py](../tests/test_render.py) | RGB/ASCII composition, replacement-layer pixels, PNG framing/CRCs/decoded pixels, save-option forwarding, filesystem behavior and optional-library isolation |
 | [test_prefabs.py](../tests/test_prefabs.py) | Validation, copies and override semantics |
 | [test_systems.py](../tests/test_systems.py) | Registration context, ordering, cache, gating and profiling |
 | [test_commands.py](../tests/test_commands.py) | Reservations, ordered mutation, callback rounds and bounds, stale skips, strict mode and exception propagation |
@@ -1964,6 +2037,42 @@ instances alone do not isolate this process-global registry.
 The README test runner covers the root README, not this guide. The guide's Python
 examples are designed to run independently; validate them in separate processes
 when editing examples so component registrations cannot contaminate other blocks.
+
+### How the grid services work together
+
+Step 042 adds five integration tests using worlds with `modules=()`. These worlds
+still run the two core spatial synchronization systems; field evolution must be
+called explicitly. The tests connect public APIs in these scenarios:
+
+- A field decays and diffuses across a ground mask separated by a rock barrier.
+  Hand-calculated cell values check the result and mass conservation during
+  diffusion. A subsequent World step leaves the field and its metadata intact.
+- Replacing a field installs a fresh array and the new definition's metadata at
+  the same layer name and insertion position. References and window views into
+  the old layer remain usable, but changing them does not affect the replacement.
+- Redefining or removing a terrain refreshes property, movement-cost and
+  passability lookups without repainting stored terrain ids or changing the
+  terrain layer's metadata. Reintroducing that id updates the lookups again.
+- A seeded world with painted terrain and sampled entities runs three scheduled
+  rounds of queued despawns, Position removals/replacements, prefab spawns and
+  direct position edits. Across the initial state and those rounds, 24 filtered
+  and unfiltered radius queries match an independent full scan in distances and
+  ordering by distance and entity id. The terrain stays unchanged.
+- Replacing terrain and field layers after warming a terrain property lookup
+  changes the property grid, RGB image, ASCII map and decoded PNG pixels to the
+  expected values. The retained old layers keep their original data.
+
+Run this integration coverage with the surrounding subsystem contracts:
+
+```bash
+.venv/bin/python -m pytest tests/test_layers.py tests/test_world_grid.py tests/test_world_spatial.py tests/test_render.py -o addopts='' -q
+```
+
+These checks passed without runtime changes in Step 042. Step 043 completed the
+Phase 2 gate with the accumulated suite and a saved PNG inspected at native and
+enlarged sizes. The grid contracts record the coordinate convention and the
+pathfinder integration still deferred to Phase 4. Field scheduling, actions and
+route execution remain later work.
 
 ### A practical extension workflow
 
@@ -2045,25 +2154,28 @@ additional effect of applying the decorator.
 
 ## Current implementation boundary
 
-The implementation contains the ECS foundations, World grid/spatial APIs, generation helpers and RGB/ASCII rendering through Step 040. The following
-boundaries are part of the current API behavior:
+The implementation contains the ECS foundations, World grid/spatial APIs,
+generation helpers and headless rendering/PNG output through Step 043, including
+the passed Phase 2 gate. The following boundaries are part of the current API
+behavior:
 
 | Area | Current state | Planned work |
 | --- | --- | --- |
 | Command errors | Stale operations are skipped and counted by default; strict mode raises; other errors propagate | Implemented in Step 024 |
 | Scheduler integration | World stepping/running, per-system and stage-boundary command flushing, clock advancement | Implemented in Step 025; event dispatch remains Phase 3 |
 | ECS milestone | Phase 1 gate passed; contracts documented | Step 026 complete; Phase 2 starts at Step 027 |
+| Grid milestone | Phase 2 gate passed; coordinates and deferred pathfinding documented; PNG saved and inspected | Step 043 complete; events start at Step 044 |
 | Layers | Allocation, access, arithmetic, sampling, evolution and World layer/field definitions | Steps 027–031/034 complete; field update scheduling is Phase 4 |
 | Terrain | Registry, lazy grid creation, lookups, property grids, masks and World mutation APIs | Steps 032–034 complete; path-cache hook connected in Step 076 |
 | Spatial queries | World-owned SpatialHash, lifecycle updates, nearby filters and scheduled synchronization | Steps 035–036 complete |
 | World generation | Seeded value_noise, terrain painting and bounded passable-position sampling | Steps 037–039 complete |
-| Rendering | RGB terrain/field/entity composition and ASCII maps | Step 040 complete; PNG encoding/saving is Step 041 |
+| Rendering | RGB/ASCII views and PNG encoding/file saving, including replacement-layer integration checks and the inspected milestone image | Steps 040–043 complete |
 | Events, actions, brains | Not implemented | Phase 3 |
 | Simulation modules and pathfinding | Not implemented; nonempty modules rejected | Phase 4 |
 | Full world persistence, plugins, configuration loading | Not implemented; component and allocator conversion already exist | Phase 5 |
 | Editor and GUI | Package placeholders only | Later editor phases |
 
-For exact remaining tasks, use [Phase 2](../plans/02-grid.md) and the
+For exact remaining tasks, use [Phase 3](../plans/03-behavior.md) and the
 [plan index](../plans/README.md). [BLUEPRINT.md](../BLUEPRINT.md) describes the
 intended complete engine; [progress.md](../plans/progress.md) records what has
 actually been implemented and checked in this repository.

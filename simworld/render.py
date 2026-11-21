@@ -1,12 +1,15 @@
-"""Headless RGB composition and compact ASCII views of a simulation world."""
+"""Headless RGB/ASCII rendering and PNG export without graphics libraries."""
 
 from math import floor, isfinite
 from operator import index
+from pathlib import Path
+import struct
+import zlib
 
 import numpy as np
 
 
-__all__ = ["render_rgb", "render_ascii"]
+__all__ = ["render_rgb", "render_ascii", "encode_png", "save_png", "save_frame"]
 
 
 def _entity_cells(world):
@@ -94,3 +97,38 @@ def render_ascii(world, max_width=100, entities=True) -> str:
         for _, x, y in _entity_cells(world):
             chars[y // stride, x // stride] = "o"
     return "\n".join("".join(row) for row in chars)
+
+
+def encode_png(rgb) -> bytes:
+    """Encode a nonempty uint8 (height, width, 3) array as 8-bit RGB PNG."""
+    rgb = np.asarray(rgb)
+    if rgb.ndim != 3 or rgb.shape[2] != 3:
+        raise ValueError("PNG input must have RGB shape (height, width, 3).")
+    if rgb.dtype != np.uint8:
+        raise TypeError("PNG input must have dtype uint8.")
+    height, width, _ = rgb.shape
+    if not (0 < height <= 0x7fffffff and 0 < width <= 0x7fffffff):
+        raise ValueError("PNG dimensions must be between 1 and 2147483647.")
+
+    def chunk(tag, payload):
+        crc = zlib.crc32(tag + payload) & 0xffffffff
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    # Filter 0 prefixes each row; C-order bytes also handle sliced/reversed views.
+    rows = b"".join(b"\x00" + row.tobytes(order="C") for row in rgb)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def save_png(path, rgb) -> Path:
+    """Encode pixels before writing, then return the destination Path."""
+    path = Path(path)
+    data = encode_png(rgb)
+    path.write_bytes(data)
+    return path
+
+
+def save_frame(world, path, **render_options) -> Path:
+    """Render a World using render_rgb options and write its PNG frame."""
+    return save_png(path, render_rgb(world, **render_options))

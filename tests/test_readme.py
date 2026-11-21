@@ -25,6 +25,7 @@ def test_readme_has_runnable_blocks():
 def test_readme_block_runs(i, tmp_path, monkeypatch, clean_components):
     monkeypatch.chdir(tmp_path)
     exec(
-        compile(BLOCKS[i], f"README block {i}", "exec"),
+        # Match standalone Python execution instead of inheriting test future imports.
+        compile(BLOCKS[i], f"README block {i}", "exec", dont_inherit=True),
         {"__name__": "__readme__"},
     )

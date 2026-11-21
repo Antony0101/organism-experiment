@@ -6,7 +6,10 @@ Steps **027–043** (17 steps). Source: [BLUEPRINT.md](../BLUEPRINT.md), §§5.5
 
 **Phase exit gate:** Grid operations, mass conservation, terrain semantics, spatial comparisons and valid PNG output pass.
 
-Steps 027–040 are complete; Steps 041–043 are unstarted. Check a box only after implementing its change and satisfying its verification. Each numbered item is one implementation session, including its focused tests and review.
+Steps 027–043 are complete. The Phase 2 exit gate has passed; evidence is in the
+[progress log](progress.md), [grid contracts](../docs/grid-contracts.md) and saved
+[milestone PNG](../docs/artifacts/phase-2-grid.png). Each numbered item is one
+implementation session, including its focused tests and review.
 
 ### Step 027 — Allocate typed grid layers
 
@@ -94,19 +97,19 @@ Steps 027–040 are complete; Steps 041–043 are unstarted. Check a box only af
 
 ### Step 041 — Encode dependency-free PNGs
 
-- [ ] **Change:** Implement encode_png/save_png/save_frame using struct/zlib/CRC and the public rendering functions.
+- [x] **Change:** Implement encode_png/save_png/save_frame using struct/zlib/CRC and the public rendering functions.
 - **Verify:** A 20x20 frame has valid PNG signature, dimensions, chunk CRCs and decompressed scanlines without Pillow.
 - **Blueprint:** §5.19.
 
 ### Step 042 — Exercise integrated grid behavior
 
-- [ ] **Change:** Extend test_layers.py and terrain/spatial/render scenarios across World APIs and module-free worlds.
+- [x] **Change:** Extend test_layers.py and terrain/spatial/render scenarios across World APIs and module-free worlds.
 - **Verify:** Replacing layers and modifying terrain preserve documented metadata; spatial queries still match brute force after lifecycle changes.
 - **Blueprint:** §§5.5–5.7, 9.1.
 
 ### Step 043 — Verify the grid milestone
 
-- [ ] **Change:** Run the accumulated suite and save a small headless PNG; record the coordinate convention and deferred pathfinder integration.
+- [x] **Change:** Run the accumulated suite and save a small headless PNG; record the coordinate convention and deferred pathfinder integration.
 - **Verify:** Grid, diffusion and spatial checks pass; inspect the generated image; no optional GUI dependency is imported.
 - **Blueprint:** §8 Phase 2.
 
